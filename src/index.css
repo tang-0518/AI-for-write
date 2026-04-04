@@ -1,0 +1,106 @@
+/* =============================================================
+   index.css — 全局 CSS 变量 & Reset
+   ============================================================= */
+
+@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap');
+
+:root {
+  /* 背景层次 */
+  --bg-base:       #0d0d16;
+  --bg-surface:    #111119;
+  --bg-card:       #15141f;
+  --bg-card-hover: #1c1a2a;
+  --bg-input:      rgba(255,255,255,0.04);
+  --bg-input-hover:rgba(255,255,255,0.06);
+
+  /* 边框 */
+  --border:        rgba(255,255,255,0.07);
+  --border-hover:  rgba(255,255,255,0.11);
+  --border-focus:  rgba(139,92,246,0.45);
+
+  /* 文字层次 */
+  --text-primary:   #eceaf8;
+  --text-secondary: #6e6b84;
+  --text-muted:     #3c3a50;
+  --text-placeholder: #4a4760;
+
+  /* 紫色主色 */
+  --purple-300: #c4b5fd;
+  --purple-400: #a78bfa;
+  --purple-500: #8b5cf6;
+  --purple-600: #7c3aed;
+  --purple-glow: rgba(139,92,246,0.18);
+
+  /* 金色副色 */
+  --gold-400: #fbbf24;
+  --gold-500: #f59e0b;
+  --gold-glow: rgba(245,158,11,0.15);
+
+  /* 状态色 */
+  --error:   #f87171;
+  --success: #4ade80;
+
+  /* 间距 */
+  --sp-1: 4px;
+  --sp-2: 8px;
+  --sp-3: 12px;
+  --sp-4: 16px;
+  --sp-5: 20px;
+  --sp-6: 24px;
+  --sp-8: 32px;
+
+  /* 兼容旧变量名 */
+  --spacing-xs: 4px;
+  --spacing-sm: 8px;
+  --spacing-md: 16px;
+  --spacing-lg: 24px;
+  --spacing-xl: 32px;
+
+  /* 圆角 */
+  --radius-xs:  3px;
+  --radius-sm:  6px;
+  --radius-md:  10px;
+  --radius-lg:  14px;
+  --radius-xl:  18px;
+  --radius-full: 9999px;
+
+  /* 字体 */
+  --font-ui:      'Inter', -apple-system, system-ui, sans-serif;
+  --font-content: 'Noto Serif SC', 'Georgia', serif;
+
+  /* 阴影 */
+  --shadow-sm: 0 1px 4px rgba(0,0,0,0.4);
+  --shadow-md: 0 4px 16px rgba(0,0,0,0.5);
+  --shadow-lg: 0 12px 40px rgba(0,0,0,0.6);
+  --shadow-glow: 0 0 20px var(--purple-glow);
+
+  /* 过渡 */
+  --transition: 0.15s ease;
+}
+
+*, *::before, *::after {
+  box-sizing: border-box;
+  margin: 0;
+  padding: 0;
+}
+
+html, body, #root {
+  height: 100%;
+  overflow: hidden;
+}
+
+body {
+  font-family: var(--font-ui);
+  background-color: var(--bg-base);
+  color: var(--text-primary);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+::-webkit-scrollbar { width: 5px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb {
+  background: var(--text-muted);
+  border-radius: 3px;
+}
+::-webkit-scrollbar-thumb:hover { background: var(--text-secondary); }
