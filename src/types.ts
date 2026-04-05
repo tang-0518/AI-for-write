@@ -13,6 +13,7 @@ export const LENGTH_CONFIGS: Record<WriteLength, LengthConfig> = {
 };
 
 export interface AppSettings {
+  schemaVersion: number;         // 迁移版本号，每次结构变更递增
   apiKey: string;
   style: WritingStyle;
   autoSave: boolean;
@@ -72,7 +73,10 @@ export const STYLE_CONFIGS: Record<WritingStyle, StyleConfig> = {
   scifi:   { label: '科幻', prompt: '以硬科幻世界观，逻辑严密', emoji: '🚀' },
 };
 
+export const SETTINGS_SCHEMA_VERSION = 1;
+
 export const DEFAULT_SETTINGS: AppSettings = {
+  schemaVersion: SETTINGS_SCHEMA_VERSION,
   apiKey: import.meta.env.VITE_GEMINI_API_KEY ?? '',
   style: 'general',
   autoSave: true,

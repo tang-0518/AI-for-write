@@ -14,13 +14,56 @@ const staticPromptCache = new Map<string, string>();
 // 将 HTTP 错误响应转为用户友好的中文消息
 async function toFriendlyError(response: Response): Promise<Error> {
   try { await response.text(); } catch { /* ignore */ }
-  const status = response.status;
-  if (status === 400) return new Error('请求格式有误，请检查模型名称是否正确');
-  if (status === 401 || status === 403) return new Error('API Key 无效或无权限，请在设置中重新填写');
-  if (status === 404) return new Error('模型不存在或名称有误，请在设置中更正模型名称');
-  if (status === 429) return new Error('请求太频繁，请稍候再试（超出 API 速率限制）');
-  if (status >= 500) return new Error('Gemini 服务暂时不可用，请稍后重试');
-  return new Error('请求失败（HTTP ' + status + '），请检查网络或 API Key');
+  const s = response.status;
+  if (s === 400) return new Error('请求格式有误，请检查模型名称是否正确');
+  if (s === 401 || s === 403) return new Error('API Key 无效或无权限，请在设置中重新填写');
+  if (s === 404) return new Error('模型不存在或名称有误，请在设置中更正模型名称');
+  if (s === 429) return new Error('请求太频繁，请稍候再试（超出 API 速率限制）');
+  if (s === 502 || s === 503) return new Error('Gemini 服务暂时不可用，请稍后重试');
+  if (s >= 500) return new Error('Gemini 服务器内部错误，请稍后重试');
+  return new Error(`请求失败（HTTP ${s}），请检查网络或 API Key`);
+}
+
+// 公共 JSON 请求辅助，避免重复 fetch 样板
+interface GeminiRequestConfig {
+  temperature: number;
+  maxOutputTokens: number;
+}
+export async function callGemini(
+  apiKey: string,
+  model: string,
+  prompt: string,
+  config: GeminiRequestConfig,
+): Promise<string> {
+  const url = `${API_BASE}/${model}:generateContent?key=${apiKey}`;
+  const response = await fetch(url, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    body: JSON.stringify({
+      contents: [{ role: 'user', parts: [{ text: prompt }] }],
+      generationConfig: config,
+    }),
+  });
+  if (!response.ok) throw await toFriendlyError(response);
+  // eslint-disable-next-line @typescript-eslint/no-explicit-any
+  const data = await response.json() as Record<string, any>;
+  return (data?.candidates?.[0]?.content?.parts?.[0]?.text as string) ?? '';
+}
+
+// JSON 数组安全解析
+export function parseJsonArray<T>(raw: string): T[] {
+  try {
+    const match = raw.match(/\[[\s\S]*\]/);
+    return match ? (JSON.parse(match[0]) as T[]) : [];
+  } catch { return []; }
+}
+
+// JSON 对象安全解析
+export function parseJsonObject(raw: string): Record<string, string> {
+  try {
+    const match = raw.match(/\{[\s\S]*\}/);
+    return match ? (JSON.parse(match[0]) as Record<string, string>) : {};
+  } catch { return {}; }
 }
 
 function buildContinueStaticBlock(style: WritingStyle, customPrompt: string): string {
@@ -84,6 +127,7 @@ export async function* streamContinue(
   oneTimePrompt = '',
   memoryContext = '',
   prevChapterTail = '',
+  signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const { apiKey, style, model } = settings;
   const staticBlock = buildContinueStaticBlock(style, settings.customPrompt ?? '');
@@ -110,6 +154,7 @@ export async function* streamContinue(
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
       generationConfig: { temperature: 0.85, maxOutputTokens: LENGTH_CONFIGS[settings.writeLength ?? 'medium'].tokens },
@@ -133,6 +178,7 @@ export async function* streamContinue(
   let isMaxTokensStop = false;
 
   while (true) {
+    if (signal?.aborted) { reader.cancel().catch(() => {}); return; }
     const { done, value } = await reader.read();
     if (done) break;
     buffer += decoder.decode(value, { stream: true });
@@ -189,11 +235,72 @@ export async function* streamContinue(
   }
 }
 
+// ── 一致性检查 ────────────────────────────────────────────────
+
+export interface ConsistencyIssue {
+  severity: 'high' | 'medium' | 'low';
+  description: string;
+  suggestion: string;
+}
+
+export async function checkConsistency(
+  chapterContent: string,
+  truthFiles: Record<string, string>,
+  settings: AppSettings,
+): Promise<ConsistencyIssue[]> {
+  const { apiKey, model } = settings;
+  const tfLines = Object.entries(truthFiles)
+    .filter(([, v]) => v.trim())
+    .map(([k, v]) => `【${k}】\n${v.slice(0, 600)}`)
+    .join('\n\n');
+
+  const prompt = `你是一位专业的中文小说编辑，负责检查章节内容与已有设定文件的一致性。
+
+【已有设定文件】
+${tfLines || '（暂无设定文件）'}
+
+【待检查章节内容】
+${chapterContent.slice(0, 3000)}
+
+请找出章节中与设定文件矛盾或不一致的地方。以 JSON 数组格式返回，每条格式：
+{"severity":"high|medium|low","description":"问题描述","suggestion":"修改建议"}
+
+如果没有问题，返回空数组 []。只返回 JSON，不要其他文字。`;
+
+  const raw = await callGemini(apiKey, model, prompt, { temperature: 0.3, maxOutputTokens: 4096 });
+  return parseJsonArray<ConsistencyIssue>(raw);
+}
+
+// ── 大纲生成 ──────────────────────────────────────────────────
+
+export async function generateOutline(
+  synopsis: string,
+  existingChapterCount: number,
+  settings: AppSettings,
+): Promise<Array<{ title: string; synopsis: string }>> {
+  const { apiKey, model } = settings;
+  const prompt = `你是一位资深中文小说策划编辑。根据以下作品简介，为小说规划后续章节大纲。
+
+【作品简介】
+${synopsis}
+
+【当前已有章节数】${existingChapterCount}
+
+请规划接下来 5 个章节的大纲，以 JSON 数组格式返回：
+[{"title":"章节名","synopsis":"本章梗概（50字以内）"}]
+
+只返回 JSON，不要其他文字。`;
+
+  const raw = await callGemini(apiKey, model, prompt, { temperature: 0.7, maxOutputTokens: 2048 });
+  return parseJsonArray<{ title: string; synopsis: string }>(raw);
+}
+
 export async function polishText(
   text: string,
   settings: AppSettings,
   oneTimePrompt = '',
   memoryContext = '',
+  signal?: AbortSignal,
 ): Promise<string> {
   const { apiKey, style, model } = settings;
   const staticBlock = buildPolishStaticBlock(style, settings.customPrompt ?? '');
@@ -217,6 +324,7 @@ export async function polishText(
   const response = await fetch(url, {
     method: 'POST',
     headers: { 'Content-Type': 'application/json' },
+    signal,
     body: JSON.stringify({
       contents: [{ role: 'user', parts: [{ text: fullPrompt }] }],
       generationConfig: { temperature: 0.6, maxOutputTokens: 65536 },

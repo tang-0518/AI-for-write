@@ -13,13 +13,15 @@ interface PendingPolish {
 
 interface EditorProps {
   content: string;
+  chapterTitle?: string;
   isStreaming: boolean;
   isPolishing: boolean;
   aiInsertRange: AiInsertRange | null;
-  pendingContinuation: string;
+  pendingContinuation?: string;
   hasPendingContinuation: boolean;
   pendingPolish: PendingPolish | null;
   focusRange?: { start: number; end: number } | null;
+  fontSize?: number;
   onChange: (value: string) => void;
   onContinue: () => void;
   onAcceptContinuation: () => void;
@@ -31,6 +33,7 @@ interface EditorProps {
 
 export function Editor({
   content,
+  chapterTitle: _chapterTitle,
   isStreaming,
   isPolishing,
   aiInsertRange,
@@ -38,6 +41,7 @@ export function Editor({
   hasPendingContinuation,
   pendingPolish,
   focusRange,
+  fontSize,
   onChange,
   onContinue,
   onAcceptContinuation,
@@ -224,6 +228,7 @@ export function Editor({
         ref={textareaRef}
         className={`editor-textarea ${isStreaming ? 'streaming' : ''}`}
         value={content}
+        style={fontSize ? { fontSize } : undefined}
         onChange={e => onChange(e.target.value)}
         onKeyDown={handleKeyDown}
         onSelect={handleSelectionChange}

@@ -8,11 +8,13 @@ interface CommandBarProps {
   disabled: boolean;
   isStreaming: boolean;
   isPolishing: boolean;
+  isGeneratingVersions?: boolean;
   onContinue: (prompt: string) => void;
   onPolish: (prompt: string) => void;
+  onMultiVersion?: (prompt: string) => void;
 }
 
-export function CommandBar({ disabled, isStreaming, isPolishing, onContinue, onPolish }: CommandBarProps) {
+export function CommandBar({ disabled, isStreaming, isPolishing, isGeneratingVersions, onContinue, onPolish, onMultiVersion }: CommandBarProps) {
   const [prompt, setPrompt] = useState('');
   const textareaRef = useRef<HTMLTextAreaElement>(null);
 
@@ -33,6 +35,12 @@ export function CommandBar({ disabled, isStreaming, isPolishing, onContinue, onP
   const triggerPolish = () => {
     if (disabled) return;
     onPolish(prompt.trim());
+    setPrompt('');
+  };
+
+  const triggerMultiVersion = () => {
+    if (disabled || !onMultiVersion) return;
+    onMultiVersion(prompt.trim());
     setPrompt('');
   };
 
@@ -77,6 +85,16 @@ export function CommandBar({ disabled, isStreaming, isPolishing, onContinue, onP
         >
           {isPolishing ? <><span className="btn-spinner btn-spinner-gold" />润色中…</> : <>💎 润色</>}
         </button>
+        {onMultiVersion && (
+          <button
+            className="btn btn-ghost command-btn"
+            onClick={triggerMultiVersion}
+            disabled={disabled}
+            title="生成 3 个版本供选择"
+          >
+            {isGeneratingVersions ? <><span className="btn-spinner" />生成中…</> : <>🎲 多版本</>}
+          </button>
+        )}
       </div>
     </div>
   );

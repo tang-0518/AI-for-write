@@ -11,6 +11,7 @@ interface SidebarProps {
   chapters: Draft[];           // 全部章节（所有书）
   activeBookId: string;
   activeDraftId: string;
+  completedChapterIds?: Set<string>;
   onSelectBook: (bookId: string) => void;
   onSelectChapter: (id: string) => void;
   onCreateBook: () => void;
@@ -31,6 +32,7 @@ export function Sidebar({
   chapters,
   activeBookId,
   activeDraftId,
+  completedChapterIds,
   onSelectBook,
   onSelectChapter,
   onCreateBook,
@@ -189,7 +191,7 @@ export function Sidebar({
                       {chs.map(ch => (
                         <li
                           key={ch.id}
-                          className={`draft-item ${ch.id === activeDraftId ? 'draft-active' : ''} ${dragOverId === ch.id ? 'draft-drag-over' : ''}`}
+                          className={`draft-item ${ch.id === activeDraftId ? 'draft-active' : ''} ${dragOverId === ch.id ? 'draft-drag-over' : ''} ${completedChapterIds?.has(ch.id) ? 'draft-completed' : ''}`}
                           onClick={() => onSelectChapter(ch.id)}
                           draggable
                           onDragStart={e => handleDragStart(e, ch.id)}

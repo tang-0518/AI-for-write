@@ -8,9 +8,11 @@ import { MEMORY_TYPE_META } from '../memory/types';
 
 interface MemoryPanelProps {
   entries: MemoryEntry[];
+  truthFiles?: MemoryEntry[];
   onAdd: (e: { name: string; description: string; type: MemoryType; content: string }) => Promise<MemoryEntry> | void;
   onUpdate: (id: string, patch: Partial<Omit<MemoryEntry, 'id' | 'updatedAt'>>) => Promise<void> | void;
   onRemove: (id: string) => Promise<void> | void;
+  onUpdateTruthFile?: (id: string, content: string) => void;
   onClose: () => void;
 }
 
@@ -18,7 +20,7 @@ const ALL_TYPES: MemoryType[] = ['project', 'feedback', 'reference', 'user'];
 
 const BLANK = { name: '', description: '', type: 'project' as MemoryType, content: '' };
 
-export function MemoryPanel({ entries, onAdd, onUpdate, onRemove, onClose }: MemoryPanelProps) {
+export function MemoryPanel({ entries, truthFiles: _truthFiles, onAdd, onUpdate, onRemove, onUpdateTruthFile: _onUpdateTruthFile, onClose }: MemoryPanelProps) {
   const [filter, setFilter]       = useState<MemoryType | 'all'>('all');
   const [editingId, setEditingId] = useState<string | 'new' | null>(null);
   const [form, setForm]           = useState(BLANK);

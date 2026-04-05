@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import { STYLE_CONFIGS, type WritingStyle } from '../types';
 import type { Draft } from '../hooks/useBooks';
+import type { Theme } from '../hooks/useTheme';
 
 interface ToolbarProps {
   isProcessing: boolean;
@@ -16,6 +17,8 @@ interface ToolbarProps {
   showInstruction: boolean;
   hasInstruction: boolean;
   memoryCount: number;
+  currentTheme?: string;
+  themes?: Theme[];
   onShowMemory: () => void;
   onClear: () => void;
   onUndo: () => void;
@@ -23,6 +26,7 @@ interface ToolbarProps {
   onStyleChange: (style: WritingStyle) => void;
   onToggleFocus: () => void;
   onToggleInstruction: () => void;
+  onThemeChange?: (id: string) => void;
 }
 
 export function Toolbar({
@@ -35,6 +39,8 @@ export function Toolbar({
   showInstruction,
   hasInstruction,
   memoryCount,
+  currentTheme,
+  themes,
   onShowMemory,
   onClear,
   onUndo,
@@ -42,19 +48,23 @@ export function Toolbar({
   onStyleChange,
   onToggleFocus,
   onToggleInstruction,
+  onThemeChange,
 }: ToolbarProps) {
   const [copied, setCopied] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
+  const [themeOpen, setThemeOpen] = useState(false);
 
   const exportRef = useRef<HTMLDivElement>(null);
   const styleRef  = useRef<HTMLDivElement>(null);
+  const themeRef  = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭下拉
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
       if (styleRef.current  && !styleRef.current.contains(e.target as Node))  setStyleOpen(false);
+      if (themeRef.current  && !themeRef.current.contains(e.target as Node))  setThemeOpen(false);
     };
     document.addEventListener('mousedown', handler);
     return () => document.removeEventListener('mousedown', handler);
@@ -126,8 +136,8 @@ export function Toolbar({
     <header className="toolbar">
       {/* 品牌 */}
       <div className="toolbar-brand">
-        <span className="brand-name">墨韵<span> AI</span></span>
-        <span className="brand-subtitle">辅助写作</span>
+        <span className="brand-name">AI<span> for Write</span></span>
+        <span className="brand-subtitle">v0.2</span>
       </div>
 
       <div className="toolbar-actions">
@@ -265,6 +275,34 @@ export function Toolbar({
           <span>⛶</span>
           <span className="btn-ghost-label">聚焦</span>
         </button>
+
+        {/* 主题 */}
+        {themes && onThemeChange && (
+          <div className="style-switcher" ref={themeRef}>
+            <button
+              className="btn btn-ghost style-switcher-btn"
+              onClick={() => setThemeOpen(v => !v)}
+              title="切换主题色"
+            >
+              <span>🎨</span>
+              <span className="btn-ghost-label">{themes.find(t => t.id === currentTheme)?.label ?? '主题'}</span>
+              <span className="style-switcher-arrow">{themeOpen ? '▲' : '▼'}</span>
+            </button>
+            {themeOpen && (
+              <div className="style-dropdown">
+                {themes.map(t => (
+                  <button
+                    key={t.id}
+                    className={`style-dropdown-item ${currentTheme === t.id ? 'style-dropdown-active' : ''}`}
+                    onClick={() => { onThemeChange(t.id); setThemeOpen(false); }}
+                  >
+                    <span>{t.label}</span>
+                  </button>
+                ))}
+              </div>
+            )}
+          </div>
+        )}
 
         {/* 设置 */}
         <button
