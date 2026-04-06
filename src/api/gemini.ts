@@ -407,7 +407,7 @@ export async function* streamContinue(
     setCache(cacheKey, {
       createdAt: Date.now(),
       text: fullText,
-      tokenEstimateIn: estimateTokens(fullPrompt),
+      tokenEstimateIn: estimateTokens(mergePrompt(systemText, userMessage)),
       tokenEstimateOut: estimateTokens(fullText),
     });
   }
@@ -564,8 +564,6 @@ async function polishChunk(
   const { apiKey, style, model } = settings;
   const systemText = buildPolishSystemInstruction(style, settings.customPrompt ?? '');
   const userMessage = buildPolishDynamicBlock(chunk, oneTimePrompt, memoryContext);
-  // fallback fullPrompt (used only for cache key estimation)
-  const fullPrompt = mergePrompt(systemText, userMessage);
 
   const chunkLen = chunk.replace(/\s/g, '').length;
   const modelMax = getModelMaxOutputTokens(model);
@@ -634,12 +632,12 @@ export async function polishText(
   memoryContext = '',
   signal?: AbortSignal,
 ): Promise<string> {
-  const { apiKey, style, model } = settings;
+  const { apiKey, style } = settings;
   const textLen = text.replace(/\s/g, '').length;
 
   // ── 短文：单块润色（走缓存） ─────────────────────────────
   if (textLen <= POLISH_CHUNK_CHARS) {
-    const staticBlock = buildPolishStaticBlock(style, settings.customPrompt ?? '');
+    const staticBlock = buildPolishSystemInstruction(style, settings.customPrompt ?? '');
     const dynamicBlock = buildPolishDynamicBlock(text, oneTimePrompt, memoryContext);
     const fullPrompt = mergePrompt(staticBlock, dynamicBlock);
     const cacheKey = makeCacheKey({ actionType: 'polish', content: text, oneTimePrompt, memoryContext, staticBlock, dynamicBlock, settings });
