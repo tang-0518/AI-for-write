@@ -11,16 +11,33 @@ export interface OutlineCard {
   synopsis: string;
   status: 'planned' | 'writing' | 'done';
   order: number;
+  parentId?: string | null;   // null/undefined = 根节点直接子节点
+}
+
+export interface CanvasNodePosition {
+  id: string;
+  x: number;
+  y: number;
 }
 
 export function useOutline(bookId: string) {
   const [cards, setCards] = useState<OutlineCard[]>([]);
+  const [canvasPositions, setCanvasPositions] = useState<CanvasNodePosition[]>([]);
 
+  // 加载卡片
   useEffect(() => {
     if (!bookId) { setCards([]); return; }
     kvGet<OutlineCard[]>(`outline-${bookId}`)
       .then(data => { if (data) setCards(data); else setCards([]); })
       .catch(() => setCards([]));
+  }, [bookId]);
+
+  // 加载画布节点位置
+  useEffect(() => {
+    if (!bookId) { setCanvasPositions([]); return; }
+    kvGet<CanvasNodePosition[]>(`canvas-positions-${bookId}`)
+      .then(data => { if (data) setCanvasPositions(data); else setCanvasPositions([]); })
+      .catch(() => setCanvasPositions([]));
   }, [bookId]);
 
   const persist = useCallback((next: OutlineCard[]) => {
@@ -50,14 +67,27 @@ export function useOutline(bookId: string) {
 
   const deleteCard = useCallback((id: string) => {
     setCards(prev => {
-      const updated = prev.filter(c => c.id !== id).map((c, i) => ({ ...c, order: i }));
+      // 删除节点时，将其子节点的 parentId 置为 null（提升到根层）
+      const updated = prev
+        .filter(c => c.id !== id)
+        .map((c, i) => ({
+          ...c,
+          order: i,
+          parentId: c.parentId === id ? null : c.parentId,
+        }));
       persist(updated);
       return updated;
     });
-  }, [persist]);
+    // 同时清除其画布位置
+    setCanvasPositions(prev => {
+      const next = prev.filter(p => p.id !== id);
+      kvSet(`canvas-positions-${bookId}`, next).catch(() => {});
+      return next;
+    });
+  }, [persist, bookId]);
 
   const reorderCards = useCallback((fromIndex: number, toIndex: number) => {
-    if (fromIndex === toIndex) return; // 边界：相同位置无需操作
+    if (fromIndex === toIndex) return;
     setCards(prev => {
       if (fromIndex < 0 || fromIndex >= prev.length || toIndex < 0 || toIndex >= prev.length) return prev;
       const next = [...prev];
@@ -74,5 +104,26 @@ export function useOutline(bookId: string) {
     persist(next);
   }, [persist]);
 
-  return { cards, addCard, updateCard, deleteCard, reorderCards, setAllCards };
+  // 更新单个节点的画布位置并持久化
+  const setNodePosition = useCallback((id: string, x: number, y: number) => {
+    setCanvasPositions(prev => {
+      const exists = prev.find(p => p.id === id);
+      const next = exists
+        ? prev.map(p => p.id === id ? { id, x, y } : p)
+        : [...prev, { id, x, y }];
+      kvSet(`canvas-positions-${bookId}`, next).catch(() => {});
+      return next;
+    });
+  }, [bookId]);
+
+  return {
+    cards,
+    canvasPositions,
+    addCard,
+    updateCard,
+    deleteCard,
+    reorderCards,
+    setAllCards,
+    setNodePosition,
+  };
 }

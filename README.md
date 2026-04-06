@@ -2,9 +2,9 @@
 
 > **Stop staring at a blank page. Let AI write with you — not for you.**
 
-A fully **browser-based** AI writing assistant that helps you write novels, stories, and long-form fiction. Powered by Google Gemini 2.5 Pro. Zero backend. Zero data leaks. Everything runs locally in your browser.
+A fully **browser-based** AI writing assistant for novels, stories, and long-form fiction. Powered by Google Gemini 2.5 Pro. Zero backend. Zero data leaks. Everything lives in your browser.
 
-![Version](https://img.shields.io/badge/version-0.2.0-brightgreen)
+![Version](https://img.shields.io/badge/version-0.3.0--beta-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Stack](https://img.shields.io/badge/stack-React%2019%20%2B%20TypeScript%20%2B%20Vite-blueviolet)
 ![AI](https://img.shields.io/badge/AI-Gemini%202.5%20Pro-orange)
@@ -19,61 +19,84 @@ You write a few sentences. AI continues. You decide what stays.
 **AI for Write** acts like a co-author sitting next to you — it knows your characters, remembers your worldbuilding, matches your writing style, and keeps the story consistent across chapters. All without sending your manuscript to any cloud.
 
 ```
-You write:  "She stepped into the rain, heart pounding, knowing he was watching—"
-AI writes:  [3 paragraphs of tension, matching your tone, style, and character history]
-You decide: Accept with Tab. Reject with Esc. It's your story.
+You write:  "她踏入雨中，心跳加速，知道他正在注视着——"
+AI writes:  [3段张力十足的续写，匹配你的文风、人物设定与前情]
+You decide: Tab 接受 · Esc 拒绝 · 这是你的故事
 ```
 
 ---
 
-## ✨ What's New in v0.2
+## ✨ What's New in v0.3 Beta
+
+### 文风学习系统（Style Learning）
 
 | Feature | Description |
 |---------|-------------|
-| 🎬 **Scene Templates** | 10 built-in scene starters (conflict, flashback, inner monologue…) — insert at cursor in one click |
-| 🍅 **Focus Mode + Pomodoro** | Distraction-free writing with a built-in 25/5 timer. Tracks words written per session |
-| ⏹ **Abort AI Streams** | Reject AI output mid-stream — no more waiting for a bad continuation to finish |
-| ⌨️ **Shortcut Help Panel** | Press `?` to see all keyboard shortcuts in an overlay |
-| 📊 **Writing Stats Dashboard** | Daily word counts, 7-day bar chart, AI accept rate — know how productive you actually are |
-| 🔧 **Settings Migration** | `schemaVersion` field + migration runner — your settings survive future updates safely |
+| 📖 **TXT 小说导入** | 智能分章节解析，支持"第X章/节/回/卷"及数字编号，序章自动识别 |
+| 🎨 **AI 文风分析** | 选中任意章节，AI 分析8个维度：句式、对话、描写、视角、节奏、词汇、情感、独特规律 |
+| 📂 **文风档案管理** | 保存多份分析档案，随时切换，支持重命名与删除 |
+| ✍️ **仿写模式** | 开启后，续写 prompt 自动注入文风指令 + 范文段落，AI 输出贴近目标风格 |
+
+### 模块化写作（Modular Writing）
+
+| Feature | Description |
+|---------|-------------|
+| 🟪 **彩色写作分块** | 每次 AI 续写生成一个彩色块，最多10种颜色循环，直观区分每次创作范围 |
+| 👁 **块颜色叠加层** | 编辑器内透明色块精准覆盖 AI 生成区域，不影响编辑体验 |
+
+### Prompt 工程优化
+
+| Feature | Description |
+|---------|-------------|
+| ⚙️ **systemInstruction 分离** | 角色设定与输出规则注入 Gemini `systemInstruction` 字段（可缓存），减少每次请求 token 消耗 |
+| 🏷 **XML 结构化消息** | 续写请求采用 `<续写><约束><背景><前文>` XML 分段，各段独立控制 token 预算 |
+| 📦 **分块润色** | 超长文本按段落边界切块，逐块串行润色，彻底解决长文润色 token 截断问题 |
+
+### Bug Fixes
+
+- 修复润色因 token 超限导致全文润色失效
+- 修复小说导入部分章节分割错误（补全序章、加强章节正则）
+- 修复大纲画布卡片颜色在各主题下显示异常
+- 修复文风分析在 Gemini 2.5 Pro 思考模型下返回空值（正确过滤 `thought` parts）
+- 修复模块化写作彩色层引发的 React `removeChild` DOM 异常
 
 ---
 
 ## 🧠 Core Features
 
 ### AI Writing Engine
-- **Continue Writing** — streams new content based on your text, memory context, and previous chapter tail
-- **Polish & Rewrite** — select any passage and get an AI-polished version side-by-side before accepting
-- **Multi-Version** — generate 3 different continuations and pick the best one
-- **Cancel anytime** — AbortController kills the stream the moment you press Esc
+- **Continue Writing** — 流式续写，融合记忆库、前章尾段、文风档案
+- **Polish & Rewrite** — 选段润色，原文/润色版并排对比后接受
+- **Multi-Version** — 生成3个不同续写版本供选择
+- **Cancel anytime** — AbortController 随时中断流式输出
 
 ### Long-Term Memory System
-- Store characters, worldbuilding, writing rules, style preferences
-- Auto-injects relevant memories before each AI call using keyword scoring
-- When context overflows, older sections are compressed into summaries automatically
-- 7 **Truth Files** per book: `current_state`, `particle_ledger`, `pending_hooks`, `chapter_summaries`, `character_arcs`, `world_rules`, `timeline`
+- 存储人物、世界观、写作规则、风格偏好
+- 关键词评分自动筛选最相关记忆注入 prompt
+- 上下文超限时自动压缩旧内容为摘要
+- 7个 Truth Files：`current_state` / `particle_ledger` / `pending_hooks` / `chapter_summaries` / `character_arcs` / `world_rules` / `timeline`
 
 ### Book & Chapter Management
-- Multi-book, multi-chapter hierarchy with drag-to-reorder
-- Auto-save every 800ms via IndexedDB
-- Cross-chapter full-text search (`Ctrl+Shift+F`)
-- Version snapshots with pin-to-protect (won't be auto-deleted)
-- Outline planning board with AI-generated chapter suggestions
+- 多书多章层级，拖拽排序
+- 800ms 自动保存（IndexedDB）
+- 跨章全文搜索（`Ctrl+Shift+F`）
+- 版本快照，支持置顶保护
+- 大纲画布，AI 生成章节建议
 
 ### Privacy by Design
-- **Zero backend** — no server, no relay, no analytics
-- API key stored in `localStorage` only — never transmitted anywhere except directly to Google's API
-- All manuscript data lives in **IndexedDB on your device**
+- **零后端** — 无服务器、无中转、无埋点
+- API Key 仅存于 `localStorage`，只直接发往 Google API
+- 所有稿件数据存于本地 **IndexedDB**
 
 ---
 
 ## ⚡ Quickstart
 
-### You need
+### 需要
 - Node.js 18+
-- A free [Gemini API Key](https://aistudio.google.com/app/apikey) from Google AI Studio
+- [Gemini API Key](https://aistudio.google.com/app/apikey)（Google AI Studio 免费申请）
 
-### Run it
+### 本地运行
 ```bash
 git clone https://github.com/tang-0518/AI-.git
 cd AI-
@@ -81,17 +104,17 @@ npm install
 npm run dev
 ```
 
-Open `http://localhost:5173` → paste your API key in Settings → start writing.
+打开 `http://localhost:5173` → 在设置中粘贴 API Key → 开始写作。
 
-### Deploy it (static, free)
+### 部署（静态，免费）
 ```bash
 npm run build
-# Upload dist/ to Vercel / Netlify / GitHub Pages — done.
+# 将 dist/ 上传至 Vercel / Netlify / GitHub Pages
 ```
 
-### Optional: pre-fill API key via env
+### 可选：通过环境变量预填 API Key
 ```bash
-# .env.local (never committed to git)
+# .env.local（不会提交到 git）
 VITE_GEMINI_API_KEY=your_key_here
 VITE_GEMINI_MODEL=gemini-2.5-pro
 ```
@@ -100,17 +123,17 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 
 ## ⌨️ Keyboard Shortcuts
 
-| Keys | Action |
-|------|--------|
-| `Ctrl + Enter` | AI Continue Writing |
-| `Ctrl + Shift + Enter` | AI Polish |
-| `Tab` | Accept AI suggestion |
-| `Esc` | Reject / cancel AI stream |
-| `Ctrl + F` | Find |
-| `Ctrl + H` | Find & Replace |
-| `Ctrl + Shift + F` | Full-book search |
-| `Ctrl + =` / `-` | Font size up / down |
-| `?` | Show all shortcuts |
+| 快捷键 | 功能 |
+|--------|------|
+| `Ctrl + Enter` | AI 续写 |
+| `Ctrl + Shift + Enter` | AI 润色 |
+| `Tab` | 接受 AI 建议 |
+| `Esc` | 拒绝 / 中断流式输出 |
+| `Ctrl + F` | 查找 |
+| `Ctrl + H` | 查找 & 替换 |
+| `Ctrl + Shift + F` | 全书搜索 |
+| `Ctrl + =` / `-` | 字号放大 / 缩小 |
+| `?` | 查看全部快捷键 |
 
 ---
 
@@ -120,9 +143,9 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 |-------|-----------|
 | Framework | React 19 + TypeScript |
 | Build | Vite 8 |
-| AI | Google Gemini API (SSE streaming) |
-| Storage | IndexedDB — zero backend |
-| Styling | Pure CSS, dark theme, 4 color schemes |
+| AI | Google Gemini API（SSE 流式） |
+| Storage | IndexedDB — 零后端 |
+| Styling | Pure CSS，深色主题，5 套配色方案 |
 
 ---
 
@@ -131,44 +154,43 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 ```
 src/
 ├── api/
-│   ├── gemini.ts              # Gemini streaming + polish (AbortController)
-│   ├── cache.ts               # L1/L2 dual-layer request cache
-│   └── contextCompression.ts  # Auto-compact long context into summaries
+│   ├── gemini.ts              # Gemini 流式续写 + 润色（systemInstruction + XML prompt）
+│   ├── styleAnalysis.ts       # 文风 AI 分析（思考模型兼容）     [NEW v0.3]
+│   ├── cache.ts               # L1/L2 双层请求缓存
+│   └── contextCompression.ts  # 长上下文自动压缩
 ├── components/
-│   ├── Editor.tsx             # Core editor (ghost text, audit layer)
-│   ├── Sidebar.tsx            # Book + chapter two-level sidebar
-│   ├── CommandBar.tsx         # Continue / Polish / Multi-version bar
-│   ├── SceneTemplates.tsx     # 10 scene template quick-inserts  [NEW v0.2]
-│   ├── FocusModeOverlay.tsx   # Pomodoro focus timer overlay      [NEW v0.2]
-│   ├── StatsPanel.tsx         # Writing stats dashboard           [NEW v0.2]
-│   ├── ShortcutHelpPanel.tsx  # Keyboard shortcut help            [NEW v0.2]
-│   ├── MemoryPanel.tsx        # Long-term memory manager
-│   ├── OutlinePanel.tsx       # Chapter outline planning board
-│   ├── SnapshotPanel.tsx      # Version history with pin
-│   └── ConsistencyPanel.tsx   # AI plot consistency checker
+│   ├── Editor.tsx             # 核心编辑器（ghost 文字 + 模块化色块层）
+│   ├── StyleLearningPanel.tsx # 文风学习面板（导入/分析/管理）   [NEW v0.3]
+│   ├── OutlineCanvas.tsx      # 大纲画布（主题色修复）            [NEW v0.3]
+│   ├── ImportPreviewModal.tsx # TXT 导入预览弹窗                  [NEW v0.3]
+│   ├── Sidebar.tsx            # 书目 + 章节二级侧边栏
+│   ├── MemoryPanel.tsx        # 长期记忆管理器
+│   ├── StatsPanel.tsx         # 写作统计面板
+│   └── VersionPickerPanel.tsx # 多版本选择面板
 ├── hooks/
-│   ├── useEditor.ts           # Editor state + AI calls + AbortController
-│   ├── useBooks.ts            # Book + chapter CRUD (IndexedDB)
-│   ├── useMemory.ts           # Memory CRUD + relevance scoring
-│   ├── useFocusTimer.ts       # Pomodoro timer state machine        [NEW v0.2]
-│   ├── useWritingStats.ts     # Daily word count + AI accept rate   [NEW v0.2]
-│   └── useSnapshots.ts        # Chapter snapshots with pin/limit
+│   ├── useEditor.ts           # 编辑器状态 + AI 调用 + 模块化写作块
+│   ├── useStyleLearning.ts    # 文风档案 CRUD（IndexedDB）        [NEW v0.3]
+│   ├── useBooks.ts            # 书目 + 章节 CRUD
+│   └── useMemory.ts           # 记忆 CRUD + 相关性评分
+├── types/
+│   └── styleProfile.ts        # StyleProfile / StyleAnalysis 类型 [NEW v0.3]
 ├── utils/
-│   └── settingsMigration.ts   # Schema-versioned settings migration [NEW v0.2]
-└── types.ts                   # Global types + DEFAULT_SETTINGS
+│   ├── txtImport.ts           # TXT 智能分章节解析                [NEW v0.3]
+│   └── settingsMigration.ts   # 设置 schema 版本迁移（v4）
+└── types.ts                   # 全局类型 + DEFAULT_SETTINGS
 ```
 
 ---
 
 ## 🗺 Roadmap
 
-- [ ] Dialogue generator panel
-- [ ] Paragraph rewrite mode (3 angles)
-- [ ] Foreshadowing tracker with inline annotations
-- [ ] Character card system (appearance / personality / relationships)
-- [ ] Cross-chapter timeline visualization
-- [ ] Plot hole detection (full-book AI analysis)
-- [ ] IndexedDB unified repository abstraction
+- [ ] 对话生成面板
+- [ ] 段落改写模式（3种角度）
+- [ ] 伏笔追踪器（行内标注）
+- [ ] 人物卡片系统（外貌 / 性格 / 关系网）
+- [ ] 跨章时间线可视化
+- [ ] 全书情节漏洞检测
+- [ ] IndexedDB 统一仓储层抽象
 
 ---
 

@@ -11,10 +11,11 @@ export interface Theme {
 }
 
 export const THEMES: Theme[] = [
-  { id: 'default',       label: '墨夜（默认）' },
-  { id: 'morning-mist',  label: '晨雾' },
-  { id: 'forest',        label: '竹林' },
-  { id: 'ocean',         label: '深海' },
+  { id: 'default',       label: '🌑 墨夜' },
+  { id: 'morning-mist',  label: '☀️ 蓝白' },
+  { id: 'parchment',     label: '📜 羊皮纸' },
+  { id: 'forest',        label: '🌿 墨绿' },
+  { id: 'ocean',         label: '🌊 深海' },
 ];
 
 export function useTheme() {

@@ -118,6 +118,7 @@ function buildSettingsFingerprint(settings: AppSettings): string {
     settings.model,
     settings.style,
     settings.writeLength,
+    settings.creativity ?? 'balanced',
     settings.customPrompt?.trim() ?? '',
   ].join('||');
 }

@@ -3,19 +3,23 @@
 // =============================================================
 
 import { useEffect, useState } from 'react';
+import type { CreativityLevel } from '../types';
+import { CREATIVITY_CONFIGS } from '../types';
 
 interface StatusBarProps {
   content: string;
   isStreaming: boolean;
   isPolishing: boolean;
+  isGeneratingVersions?: boolean;
   error: string | null;
   savedAt: number | null;
   wordGoal?: number;
   compactionCount?: number;
   compactDisabled?: boolean;
+  creativity?: CreativityLevel;
 }
 
-export function StatusBar({ content, isStreaming, isPolishing, error, savedAt, wordGoal = 0, compactionCount = 0, compactDisabled = false }: StatusBarProps) {
+export function StatusBar({ content, isStreaming, isPolishing, isGeneratingVersions = false, error, savedAt, wordGoal = 0, compactionCount = 0, compactDisabled = false, creativity }: StatusBarProps) {
   const charCount = content.length;
   const chineseCount = (content.match(/[\u4e00-\u9fff]/g) ?? []).length;
   const paragraphCount = content ? content.split(/\n+/).filter(p => p.trim().length > 0).length : 0;
@@ -58,6 +62,7 @@ export function StatusBar({ content, isStreaming, isPolishing, error, savedAt, w
     if (visibleError) return null;
     if (isStreaming) return '✨ AI 正在续写…';
     if (isPolishing) return '💎 AI 正在润色…';
+    if (isGeneratingVersions) return '🎲 正在生成三版本，请稍候…';
     if (charCount === 0) return '开始写作吧！';
     return null;
   };
@@ -122,6 +127,11 @@ export function StatusBar({ content, isStreaming, isPolishing, error, savedAt, w
 
       {/* 右侧：压缩指示 + 已保存 + 快捷键 */}
       <div className="status-hint">
+        {creativity && creativity !== 'balanced' && (
+          <span className="creativity-badge" title={CREATIVITY_CONFIGS[creativity].hint}>
+            {CREATIVITY_CONFIGS[creativity].label}
+          </span>
+        )}
         {compactDisabled && (
           <span
             className="compact-badge compact-badge-warn"

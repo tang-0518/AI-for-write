@@ -1,16 +1,17 @@
 // =============================================================
 // db/index.ts — IndexedDB 封装
 //
-// 数据库：novel-assistant  版本：2
+// 数据库：novel-assistant  版本：3
 // Object Stores：
-//   books    — keyPath: 'id'，一条记录 = 一本书
-//   drafts   — keyPath: 'id'，一条记录 = 一个章节（含 bookId）
-//   memories — keyPath: 'id'，一条记录 = 一条记忆
-//   kv       — 通用键值对（排序、激活 ID 等）
+//   books          — keyPath: 'id'，一条记录 = 一本书
+//   drafts         — keyPath: 'id'，一条记录 = 一个章节（含 bookId）
+//   memories       — keyPath: 'id'，一条记录 = 一条记忆
+//   style_profiles — keyPath: 'id'，一条记录 = 一份文风档案
+//   kv             — 通用键值对（排序、激活 ID 等）
 // =============================================================
 
 const DB_NAME    = 'novel-assistant';
-const DB_VERSION = 2;
+const DB_VERSION = 3;
 
 let _db: IDBDatabase | null = null;
 
@@ -28,6 +29,9 @@ export function openDB(): Promise<IDBDatabase> {
       if (!db.objectStoreNames.contains('kv'))       db.createObjectStore('kv');
       // v2 stores
       if (!db.objectStoreNames.contains('books'))    db.createObjectStore('books',    { keyPath: 'id' });
+      // v3 stores
+      if (!db.objectStoreNames.contains('style_profiles'))
+        db.createObjectStore('style_profiles', { keyPath: 'id' });
     };
 
     req.onsuccess  = () => { _db = req.result; resolve(_db); };
@@ -38,7 +42,7 @@ export function openDB(): Promise<IDBDatabase> {
 
 // ── 通用辅助 ──────────────────────────────────────────────────
 
-type StoreName = 'drafts' | 'memories' | 'books';
+type StoreName = 'drafts' | 'memories' | 'books' | 'style_profiles';
 
 export async function dbGetAll<T>(store: StoreName): Promise<T[]> {
   const db = await openDB();

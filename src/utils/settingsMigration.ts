@@ -31,14 +31,31 @@ const MIGRATIONS: Migration[] = [
       if (s.customPrompt        === undefined) s.customPrompt        = DEFAULT_SETTINGS.customPrompt;
     },
   },
-  // 未来新增迁移在此追加，例如：
-  // {
-  //   version: 2,
-  //   up(s) {
-  //     // 将废弃的 oldField 映射到 newField
-  //     if ('oldField' in s) { s.newField = s.oldField; delete s.oldField; }
-  //   },
-  // },
+  {
+    version: 2,
+    up(s) {
+      // v1 → v2：补全编辑器外观字段
+      if (s.editorFontSize === undefined) s.editorFontSize = DEFAULT_SETTINGS.editorFontSize;
+      if (s.editorFont     === undefined) s.editorFont     = DEFAULT_SETTINGS.editorFont;
+    },
+  },
+  {
+    version: 3,
+    up(s) {
+      // v2 → v3：补全创意度与指令预设字段
+      if (s.promptPresets === undefined) s.promptPresets = DEFAULT_SETTINGS.promptPresets;
+      if (s.creativity    === undefined) s.creativity    = DEFAULT_SETTINGS.creativity;
+    },
+  },
+  {
+    version: 4,
+    up(s) {
+      // v3 → v4：补全模仿模式与模块化写作字段
+      if (s.imitationMode       === undefined) s.imitationMode       = DEFAULT_SETTINGS.imitationMode;
+      if (s.imitationProfileId  === undefined) s.imitationProfileId  = DEFAULT_SETTINGS.imitationProfileId;
+      if (s.modularWriting      === undefined) s.modularWriting      = DEFAULT_SETTINGS.modularWriting;
+    },
+  },
 ];
 
 /**

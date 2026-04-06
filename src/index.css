@@ -30,6 +30,12 @@
   --purple-500: #8b5cf6;
   --purple-600: #7c3aed;
   --purple-glow: rgba(139,92,246,0.18);
+  /* RGB 裸值，供 rgba(var(--purple-rgb), opacity) 使用 */
+  --purple-rgb: 139,92,246;
+  --purple-sec-rgb: 99,102,241;
+  /* 模态框 & 布局层背景 */
+  --modal-bg: rgba(15,14,28,0.94);
+  --sidebar-bg: rgba(11,10,22,0.92);
 
   /* 金色副色 */
   --gold-400: #fbbf24;
@@ -76,6 +82,217 @@
 
   /* 过渡 */
   --transition: 0.15s ease;
+  --transition-md: 0.22s ease;
+
+  /* 渐变（主色调） */
+  --grad-brand: linear-gradient(135deg, var(--purple-300) 0%, var(--purple-400) 100%);
+  --grad-btn:   linear-gradient(135deg, var(--purple-600) 0%, var(--purple-500) 100%);
+  --grad-btn-h: linear-gradient(135deg, var(--purple-500) 0%, #818cf8 100%);
+  --shadow-glow-btn: 0 4px 20px rgba(139,92,246,0.40);
+
+  /* 布局层背景（dark 默认） */
+  --toolbar-bg:     rgba(12,11,24,0.90);
+  --editor-bg:      rgba(16,15,31,0.90);
+  --status-bg:      rgba(10,9,20,0.92);
+  --command-bar-bg: rgba(11,10,22,0.70);
+  --command-bar-blur: blur(10px);
+
+  /* 浮动光球（dark 默认） */
+  --orb1-color: rgba(139,92,246,0.18);
+  --orb2-color: rgba(99,102,241,0.14);
+  --orb3-color: rgba(167,139,250,0.07);
+
+  /* 顶部高光线 */
+  --topline-color: rgba(139,92,246,0.40);
+  --topline-mid:   rgba(99,102,241,0.30);
+
+  /* 大纲画布节点背景（须与 --bg-base 有明显对比） */
+  --canvas-node-bg: #1e1b2e;
+  --canvas-node-stroke: rgba(139,92,246,0.28);
+}
+
+/* =============================================================
+   主题 CSS 变量覆盖
+   ============================================================= */
+
+/* 蓝白（晨雾） — 明亮文档风，蓝色 accent */
+[data-theme='morning-mist'] {
+  --bg-base:        #f0f2f5;
+  --bg-surface:     #ffffff;
+  --bg-card:        #ffffff;
+  --bg-card-hover:  rgba(0,0,0,0.04);
+  --bg-input:       rgba(0,0,0,0.04);
+  --bg-input-hover: rgba(0,0,0,0.07);
+  --border:         rgba(0,0,0,0.1);
+  --border-hover:   rgba(0,0,0,0.18);
+  --border-focus:   rgba(59,100,204,0.5);
+  --text-primary:   #111827;
+  --text-secondary: #4b5563;
+  --text-muted:     #9ca3af;
+  --text-placeholder: rgba(0,0,0,0.3);
+  --purple-300: #93c5fd;
+  --purple-400: #3b82f6;
+  --purple-500: #2563eb;
+  --purple-600: #1d4ed8;
+  --purple-glow: rgba(37,99,235,0.15);
+  --sidebar-bg: #e8eaed;
+  --scrollbar-thumb: rgba(0,0,0,0.2);
+  /* 渐变 & 布局层 */
+  --grad-brand: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-400) 100%);
+  --grad-btn:   linear-gradient(135deg, var(--purple-600) 0%, var(--purple-500) 100%);
+  --grad-btn-h: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-400) 100%);
+  --shadow-glow-btn: 0 4px 20px rgba(37,99,235,0.30);
+  --toolbar-bg:     rgba(255,255,255,0.94);
+  --editor-bg:      rgba(255,255,255,0.97);
+  --status-bg:      rgba(232,234,237,0.96);
+  --command-bar-bg: rgba(248,249,251,0.90);
+  --command-bar-blur: blur(10px);
+  /* 光球 */
+  --orb1-color: rgba(37,99,235,0.06);
+  --orb2-color: rgba(59,130,246,0.05);
+  --orb3-color: rgba(147,197,253,0.04);
+  --topline-color: rgba(37,99,235,0.30);
+  --topline-mid:   rgba(59,130,246,0.20);
+  --purple-rgb: 37,99,235;
+  --purple-sec-rgb: 59,130,246;
+  --modal-bg: rgba(255,255,255,0.97);
+  --canvas-node-bg: #ffffff;
+  --canvas-node-stroke: rgba(37,99,235,0.30);
+  color-scheme: light;
+}
+
+/* 羊皮纸 — 暖米黄，书卷感 */
+[data-theme='parchment'] {
+  --bg-base:        #f2e8d0;
+  --bg-surface:     #fdf6e3;
+  --bg-card:        #fdf6e3;
+  --bg-card-hover:  rgba(100,70,20,0.05);
+  --bg-input:       rgba(100,70,20,0.06);
+  --bg-input-hover: rgba(100,70,20,0.10);
+  --border:         rgba(100,70,20,0.18);
+  --border-hover:   rgba(100,70,20,0.28);
+  --border-focus:   rgba(150,100,30,0.5);
+  --text-primary:   #2a1c08;
+  --text-secondary: #6b5030;
+  --text-muted:     #a08860;
+  --text-placeholder: rgba(42,28,8,0.35);
+  --purple-300: #d4a55a;
+  --purple-400: #b8831a;
+  --purple-500: #9a6e10;
+  --purple-600: #7d5800;
+  --purple-glow: rgba(184,131,26,0.18);
+  --sidebar-bg: #e8ddc0;
+  --scrollbar-thumb: rgba(100,70,20,0.25);
+  /* 渐变 & 布局层 */
+  --grad-brand: linear-gradient(135deg, var(--purple-600) 0%, var(--purple-400) 100%);
+  --grad-btn:   linear-gradient(135deg, var(--purple-600) 0%, var(--purple-500) 100%);
+  --grad-btn-h: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-400) 100%);
+  --shadow-glow-btn: 0 4px 20px rgba(150,100,30,0.30);
+  --toolbar-bg:     rgba(253,246,227,0.94);
+  --editor-bg:      rgba(253,246,227,0.97);
+  --status-bg:      rgba(232,221,190,0.96);
+  --command-bar-bg: rgba(248,241,220,0.90);
+  --command-bar-blur: blur(10px);
+  /* 光球 */
+  --orb1-color: rgba(184,131,26,0.07);
+  --orb2-color: rgba(212,165,90,0.05);
+  --orb3-color: rgba(225,188,120,0.04);
+  --topline-color: rgba(184,131,26,0.30);
+  --topline-mid:   rgba(212,165,90,0.20);
+  --purple-rgb: 154,110,16;
+  --purple-sec-rgb: 130,90,0;
+  --modal-bg: rgba(253,246,227,0.97);
+  --canvas-node-bg: #fdf6e3;
+  --canvas-node-stroke: rgba(184,131,26,0.35);
+  color-scheme: light;
+}
+
+/* 墨绿 — 深绿暗色，林间静谧 */
+[data-theme='forest'] {
+  --bg-base:        #060e04;
+  --bg-surface:     #0b1608;
+  --bg-card:        #0f1c0c;
+  --bg-card-hover:  #162511;
+  --bg-input:       rgba(80,160,50,0.06);
+  --bg-input-hover: rgba(80,160,50,0.10);
+  --border:         rgba(80,160,50,0.12);
+  --border-hover:   rgba(80,160,50,0.22);
+  --border-focus:   rgba(80,160,50,0.5);
+  --text-primary:   #cce8b8;
+  --text-secondary: #6ea850;
+  --text-muted:     #2e5e1e;
+  --text-placeholder: rgba(80,160,50,0.38);
+  --purple-300: #90d870;
+  --purple-400: #6dc248;
+  --purple-500: #52a830;
+  --purple-600: #3e8e1e;
+  --purple-glow: rgba(80,160,50,0.2);
+  --sidebar-bg: rgba(6,14,4,0.95);
+  --scrollbar-thumb: rgba(80,160,50,0.3);
+  /* 渐变 & 布局层 */
+  --grad-brand: linear-gradient(135deg, var(--purple-300) 0%, var(--purple-400) 100%);
+  --grad-btn:   linear-gradient(135deg, var(--purple-600) 0%, var(--purple-500) 100%);
+  --grad-btn-h: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-400) 100%);
+  --shadow-glow-btn: 0 4px 20px rgba(80,160,50,0.35);
+  --toolbar-bg:     rgba(6,14,4,0.92);
+  --editor-bg:      rgba(11,22,8,0.92);
+  --status-bg:      rgba(4,10,2,0.94);
+  --command-bar-bg: rgba(6,14,4,0.75);
+  /* 光球 */
+  --orb1-color: rgba(80,160,50,0.12);
+  --orb2-color: rgba(60,130,35,0.10);
+  --orb3-color: rgba(110,168,80,0.06);
+  --topline-color: rgba(80,160,50,0.35);
+  --topline-mid:   rgba(60,130,35,0.25);
+  --purple-rgb: 80,160,50;
+  --purple-sec-rgb: 60,130,35;
+  --modal-bg: rgba(11,22,8,0.95);
+  --canvas-node-bg: #0f2a0b;
+  --canvas-node-stroke: rgba(80,160,50,0.35);
+}
+
+/* 深海 — 深蓝，静水流深 */
+[data-theme='ocean'] {
+  --bg-base:        #01080f;
+  --bg-surface:     #03101e;
+  --bg-card:        #051628;
+  --bg-card-hover:  #082036;
+  --bg-input:       rgba(30,110,190,0.07);
+  --bg-input-hover: rgba(30,110,190,0.12);
+  --border:         rgba(30,110,190,0.13);
+  --border-hover:   rgba(30,110,190,0.24);
+  --border-focus:   rgba(30,110,190,0.55);
+  --text-primary:   #b8d8f0;
+  --text-secondary: #4a88b8;
+  --text-muted:     #1e4868;
+  --text-placeholder: rgba(30,110,190,0.38);
+  --purple-300: #70c0f0;
+  --purple-400: #40a8e0;
+  --purple-500: #2090cc;
+  --purple-600: #0878b8;
+  --purple-glow: rgba(30,110,190,0.22);
+  --sidebar-bg: rgba(1,8,15,0.95);
+  --scrollbar-thumb: rgba(30,110,190,0.3);
+  /* 渐变 & 布局层 */
+  --grad-brand: linear-gradient(135deg, var(--purple-300) 0%, var(--purple-400) 100%);
+  --grad-btn:   linear-gradient(135deg, var(--purple-600) 0%, var(--purple-500) 100%);
+  --grad-btn-h: linear-gradient(135deg, var(--purple-500) 0%, var(--purple-400) 100%);
+  --shadow-glow-btn: 0 4px 20px rgba(30,110,190,0.40);
+  --toolbar-bg:     rgba(1,8,15,0.93);
+  --editor-bg:      rgba(3,16,30,0.93);
+  --status-bg:      rgba(1,6,12,0.95);
+  --command-bar-bg: rgba(1,8,15,0.76);
+  /* 光球 */
+  --orb1-color: rgba(30,110,190,0.14);
+  --orb2-color: rgba(20,80,150,0.11);
+  --orb3-color: rgba(64,168,224,0.06);
+  --topline-color: rgba(30,110,190,0.38);
+  --topline-mid:   rgba(20,80,150,0.28);
+  --purple-rgb: 30,110,190;
+  --purple-sec-rgb: 20,80,150;
+  --modal-bg: rgba(3,16,30,0.96);
+  --canvas-node-bg: #04182e;
+  --canvas-node-stroke: rgba(30,110,190,0.40);
 }
 
 *, *::before, *::after {

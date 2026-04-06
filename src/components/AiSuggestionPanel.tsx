@@ -8,9 +8,11 @@ interface AiSuggestionPanelProps {
   isPolishing: boolean;
   pendingContinuation: string;
   hasPendingContinuation: boolean;
+  isTruncated?: boolean;
   pendingPolish: { text: string; selStart: number; selEnd: number } | null;
   onAcceptContinuation: () => void;
   onRejectContinuation: () => void;
+  onResumeWriting?: () => void;
   onAcceptPolish: () => void;
   onRejectPolish: () => void;
 }
@@ -21,9 +23,11 @@ export function AiSuggestionPanel({
   isPolishing,
   pendingContinuation,
   hasPendingContinuation,
+  isTruncated,
   pendingPolish,
   onAcceptContinuation,
   onRejectContinuation,
+  onResumeWriting,
   onAcceptPolish,
   onRejectPolish,
 }: AiSuggestionPanelProps) {
@@ -55,6 +59,11 @@ export function AiSuggestionPanel({
                 <button className="ai-accept-btn" onClick={onAcceptContinuation} title="接受 (Tab)">
                   ✓ 接受 <kbd>Tab</kbd>
                 </button>
+                {isTruncated && onResumeWriting && (
+                  <button className="ai-resume-btn" onClick={onResumeWriting} title="内容被截断，继续生成">
+                    ↓ 接着写
+                  </button>
+                )}
                 <button className="ai-reject-btn" onClick={onRejectContinuation} title="丢弃 (Esc)">
                   ✗ <kbd>Esc</kbd>
                 </button>
@@ -72,6 +81,11 @@ export function AiSuggestionPanel({
                 {pendingContinuation}
                 {isStreaming && <span className="ai-stream-cursor" />}
               </pre>
+              {isTruncated && !isStreaming && (
+                <div className="ai-truncated-hint">
+                  ⚠️ 内容达到长度上限，点击「接着写」继续生成
+                </div>
+              )}
             </div>
           </div>
         </>

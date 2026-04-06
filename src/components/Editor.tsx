@@ -2,8 +2,9 @@
 // components/Editor.tsx — 核心编辑器（Ghost 文字 + 审核层）
 // =============================================================
 
-import { useEffect, useRef } from 'react';
-import type { AiInsertRange } from '../hooks/useEditor';
+import { useEffect, useRef, useState } from 'react';
+import type { AiInsertRange, BLOCK_COLORS_ARRAY } from '../hooks/useEditor';
+import type { WritingBlock } from '../types';
 
 interface PendingPolish {
   text: string;
@@ -22,6 +23,8 @@ interface EditorProps {
   pendingPolish: PendingPolish | null;
   focusRange?: { start: number; end: number } | null;
   fontSize?: number;
+  editorFont?: string;
+  writingBlocks?: WritingBlock[];
   onChange: (value: string) => void;
   onContinue: () => void;
   onAcceptContinuation: () => void;
@@ -30,6 +33,75 @@ interface EditorProps {
   onRejectPolish: () => void;
   onSelectionChange: (range: { start: number; end: number } | null) => void;
 }
+
+// 与 useEditor.ts 中保持一致的颜色数组
+const BLOCK_COLORS: readonly string[] = [
+  'rgba(139,92,246,0.12)',
+  'rgba(59,130,246,0.12)',
+  'rgba(16,185,129,0.12)',
+  'rgba(245,158,11,0.12)',
+  'rgba(239,68,68,0.12)',
+  'rgba(6,182,212,0.12)',
+  'rgba(168,85,247,0.12)',
+  'rgba(234,179,8,0.12)',
+  'rgba(20,184,166,0.12)',
+  'rgba(249,115,22,0.12)',
+];
+
+// 块颜色的边框色（更深一档）
+const BLOCK_BORDER_COLORS: readonly string[] = [
+  'rgba(139,92,246,0.35)',
+  'rgba(59,130,246,0.35)',
+  'rgba(16,185,129,0.35)',
+  'rgba(245,158,11,0.35)',
+  'rgba(239,68,68,0.35)',
+  'rgba(6,182,212,0.35)',
+  'rgba(168,85,247,0.35)',
+  'rgba(234,179,8,0.35)',
+  'rgba(20,184,166,0.35)',
+  'rgba(249,115,22,0.35)',
+];
+
+// 将写作块转换为带颜色的 span 序列
+function renderBlockLayer(content: string, blocks: WritingBlock[]): React.ReactNode {
+  if (!blocks.length) return null;
+  // 合并重叠块 → 逐字符确定颜色
+  const colorMap = new Array<number | null>(content.length).fill(null);
+  for (const blk of blocks) {
+    const end = Math.min(blk.end, content.length);
+    for (let i = blk.start; i < end; i++) colorMap[i] = blk.colorIndex;
+  }
+
+  // 生成 span 序列（连续同色合并）
+  const spans: React.ReactNode[] = [];
+  let i = 0;
+  while (i < content.length) {
+    const ci = colorMap[i];
+    let j = i + 1;
+    while (j < content.length && colorMap[j] === ci) j++;
+    const seg = content.slice(i, j);
+    if (ci !== null) {
+      spans.push(
+        <span
+          key={i}
+          style={{
+            background: BLOCK_COLORS[ci % BLOCK_COLORS.length],
+            borderBottom: `1px solid ${BLOCK_BORDER_COLORS[ci % BLOCK_BORDER_COLORS.length]}`,
+          }}
+        >
+          {seg}
+        </span>
+      );
+    } else {
+      spans.push(<span key={i} style={{ color: 'transparent' }}>{seg}</span>);
+    }
+    i = j;
+  }
+  return <>{spans}</>;
+}
+
+// suppress unused import warning
+void (null as unknown as typeof BLOCK_COLORS_ARRAY);
 
 export function Editor({
   content,
@@ -42,6 +114,8 @@ export function Editor({
   pendingPolish,
   focusRange,
   fontSize,
+  editorFont,
+  writingBlocks = [],
   onChange,
   onContinue,
   onAcceptContinuation,
@@ -52,8 +126,12 @@ export function Editor({
 }: EditorProps) {
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostOverlayRef = useRef<HTMLDivElement>(null);
+  const gutterRef = useRef<HTMLDivElement>(null);
   const isProcessing = isStreaming || isPolishing;
   const hasPending = hasPendingContinuation || pendingPolish !== null;
+
+  // 当前光标所在行（高亮用）
+  const [activeLine, setActiveLine] = useState(0);
 
   // 流式输出时自动滚到底（textarea + ghost overlay 同步）
   useEffect(() => {
@@ -65,12 +143,16 @@ export function Editor({
     }
   }, [pendingContinuation, isStreaming]);
 
-  // textarea 滚动时同步 ghost overlay
+  // textarea 滚动时同步 ghost overlay + gutter
   useEffect(() => {
     const el = textareaRef.current;
     const overlay = ghostOverlayRef.current;
-    if (!el || !overlay) return;
-    const sync = () => { overlay.scrollTop = el.scrollTop; };
+    const gutter = gutterRef.current;
+    if (!el) return;
+    const sync = () => {
+      if (overlay) overlay.scrollTop = el.scrollTop;
+      if (gutter) gutter.scrollTop = el.scrollTop;
+    };
     el.addEventListener('scroll', sync);
     return () => el.removeEventListener('scroll', sync);
   }, []);
@@ -107,12 +189,15 @@ export function Editor({
     return () => window.removeEventListener('keydown', handler);
   }, [hasPendingContinuation, pendingPolish, onAcceptContinuation, onRejectContinuation, onAcceptPolish, onRejectPolish]);
 
-  // 追踪选区，通知 useEditor
+  // 追踪选区，通知 useEditor；同时更新当前行高亮
   const handleSelectionChange = () => {
     const el = textareaRef.current;
     if (!el) return;
     const { selectionStart: s, selectionEnd: e } = el;
     onSelectionChange(s !== e ? { start: s, end: e } : null);
+    // 计算光标所在行
+    const lineIndex = el.value.slice(0, s).split('\n').length - 1;
+    setActiveLine(lineIndex);
   };
 
   const handleKeyDown = (e: React.KeyboardEvent<HTMLTextAreaElement>) => {
@@ -213,44 +298,80 @@ export function Editor({
     );
   };
 
+  const lines = content.split('\n');
+
+  const editorFontSize = fontSize ?? 17;
+
+  // 润色面板叠加时给 textarea 留出底部空间，防止光标躲在面板下
+  const polishBottomPad = pendingPolish !== null ? 'calc(min(44%, 320px) + 8px)' : undefined;
+
   return (
-    <div className="editor-wrapper">
-      {/* 处理中遮罩 */}
-      {isProcessing && <div className="editor-overlay" />}
+    <div
+      className="editor-wrapper"
+      style={{
+      '--editor-font-size': `${editorFontSize}px`,
+      '--editor-font-family': editorFont ?? "'Noto Serif SC', serif",
+    } as React.CSSProperties}
+    >
+      {/* 行号 gutter */}
+      <div className="editor-gutter" ref={gutterRef} aria-hidden>
+        {lines.map((_, i) => (
+          <div
+            key={i}
+            className={`editor-gutter-line${i === activeLine ? ' editor-gutter-line-active' : ''}`}
+          >
+            {i + 1}
+          </div>
+        ))}
+        {lines.length === 0 && <div className="editor-gutter-line editor-gutter-line-active">1</div>}
+      </div>
 
-      {/* AI 接受后高亮 */}
-      {renderHighlight()}
+      {/* 编辑器主体（垂直排列） */}
+      <div className="editor-main-col">
+        {/* 处理中遮罩 */}
+        {isProcessing && <div className="editor-overlay" />}
 
-      {/* Ghost 文字（流式 + 待审核） */}
-      {renderGhostOverlay()}
-
-      <textarea
-        ref={textareaRef}
-        className={`editor-textarea ${isStreaming ? 'streaming' : ''}`}
-        value={content}
-        style={fontSize ? { fontSize } : undefined}
-        onChange={e => onChange(e.target.value)}
-        onKeyDown={handleKeyDown}
-        onSelect={handleSelectionChange}
-        onMouseUp={handleSelectionChange}
-        placeholder={
-          '在这里开始你的故事...\n\n💡 小提示：\n• 输入50字以上内容后，点击「AI续写」或按 Ctrl+Enter\n• 已有内容可点击「AI润色」进行优化\n• 内容自动保存到本地，刷新不丢失'
-        }
-        disabled={isProcessing || hasPending}
-        spellCheck={false}
-      />
-
-      {isStreaming && (
-        <div className="typing-cursor-container">
-          <span className="typing-cursor" />
+        {/* 模块化写作：块颜色层（始终渲染容器，避免条件挂载引发 removeChild 异常） */}
+        <div
+          className="ai-highlight-overlay block-color-layer"
+          aria-hidden
+          style={{ pointerEvents: 'none', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
+        >
+          {writingBlocks.length > 0 ? renderBlockLayer(content, writingBlocks) : null}
         </div>
-      )}
 
-      {/* 续写审核栏 */}
-      {renderContinuationAuditBar()}
+        {/* AI 接受后高亮 */}
+        {renderHighlight()}
 
-      {/* 润色审核面板 */}
-      {renderPolishPanel()}
+        {/* Ghost 文字（流式 + 待审核） */}
+        {renderGhostOverlay()}
+
+        <textarea
+          ref={textareaRef}
+          className={`editor-textarea ${isStreaming ? 'streaming' : ''}`}
+          value={content}
+          onChange={e => onChange(e.target.value)}
+          onKeyDown={handleKeyDown}
+          onSelect={handleSelectionChange}
+          onMouseUp={handleSelectionChange}
+          placeholder="在这里开始你的故事..."
+          disabled={isProcessing || hasPending}
+          spellCheck={false}
+          style={polishBottomPad ? { paddingBottom: polishBottomPad } : undefined}
+        />
+
+        {isStreaming && (
+          <div className="typing-cursor-container">
+            <span className="typing-cursor" />
+          </div>
+        )}
+
+        {/* 续写审核栏 */}
+        {renderContinuationAuditBar()}
+
+        {/* 润色审核面板 */}
+        {renderPolishPanel()}
+      </div>
     </div>
   );
 }

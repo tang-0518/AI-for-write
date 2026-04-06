@@ -291,6 +291,46 @@ export function useBooks() {
     await dbReplaceAll('drafts', currentChapters);
   }, []);
 
+  /**
+   * 导入书目：原子性写入书籍 + 批量章节，不创建默认空章节。
+   * 适用于 TXT 导入场景。
+   */
+  const createBookWithChapters = useCallback(async (
+    title: string,
+    synopsis: string,
+    importedChapters: { title: string; content: string }[],
+  ): Promise<Book> => {
+    const book = newBook(title, synopsis);
+    await dbPut('books', book);
+
+    const now = Date.now();
+    const drafts: Draft[] = importedChapters.map((c, i) => ({
+      id: `ch_${now + i}_${Math.random().toString(36).slice(2, 6)}`,
+      bookId: book.id,
+      title: c.title,
+      content: c.content,
+      order: i,
+      updatedAt: now,
+      contextState: { ...DEFAULT_DRAFT_CONTEXT_STATE },
+    }));
+
+    // 批量写入（逐条写入避免单个大事务超时）
+    for (const draft of drafts) {
+      await dbPut('drafts', draft);
+    }
+
+    setBooksState(prev => {
+      const next = [...prev, book];
+      kvSet('book-order', next.map(b => b.id)).catch(() => {});
+      return next;
+    });
+    setActiveBookId(book.id);
+    setChaptersState(prev => [...prev, ...drafts]);
+    if (drafts.length > 0) setActiveDraftId(drafts[0].id);
+
+    return book;
+  }, [setActiveBookId, setActiveDraftId]);
+
   // ── 派生状态 ────────────────────────────────────────────
   const activeBook = books.find(b => b.id === activeBookId) ?? books[0];
   const activeDraft = chapters.find(c => c.id === activeDraftId) ??
@@ -310,6 +350,7 @@ export function useBooks() {
     loaded,
     bookChapters,
     createBook,
+    createBookWithChapters,
     updateBookMeta,
     deleteBook,
     switchBook,

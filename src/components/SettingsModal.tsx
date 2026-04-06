@@ -3,17 +3,18 @@
 // =============================================================
 
 import { useState } from 'react';
-import type { AppSettings, WritingStyle, WriteLength } from '../types';
-import { STYLE_CONFIGS, LENGTH_CONFIGS } from '../types';
+import type { AppSettings, WritingStyle, WriteLength, CreativityLevel } from '../types';
+import { STYLE_CONFIGS, LENGTH_CONFIGS, EDITOR_FONT_OPTIONS, CREATIVITY_CONFIGS } from '../types';
 
-type Category = 'connection' | 'writing' | 'prompt' | 'preferences' | 'context';
+type Category = 'connection' | 'writing' | 'prompt' | 'preferences' | 'context' | 'appearance';
 
 const NAV: { id: Category; icon: string; label: string }[] = [
   { id: 'connection',   icon: '⬡', label: '连接' },
   { id: 'writing',      icon: '✦', label: '写作风格' },
   { id: 'prompt',       icon: '◈', label: '提示词' },
   { id: 'preferences',  icon: '◎', label: '偏好' },
-  { id: 'context',      icon: '⊞', label: '上下文策略' },
+  { id: 'context',      icon: '⊞', label: '上下文' },
+  { id: 'appearance',   icon: '🎨', label: '外观' },
 ];
 
 interface Props {
@@ -139,6 +140,31 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
                         >
                           <span>{cfg.emoji}</span>
                           <span>{cfg.label}</span>
+                        </button>
+                      )
+                    )}
+                  </div>
+                </div>
+
+                <div className="settings-divider" />
+
+                <div className="settings-row">
+                  <div className="settings-row-label"><span>创意度 / 幻觉控制</span></div>
+                  <div className="settings-row-desc">
+                    控制模型的随机性（temperature）。精确模式逻辑严密，狂野模式更有创意但可能偏离设定。
+                  </div>
+                  <div className="length-grid">
+                    {(Object.entries(CREATIVITY_CONFIGS) as [CreativityLevel, typeof CREATIVITY_CONFIGS[CreativityLevel]][]).map(
+                      ([key, cfg]) => (
+                        <button
+                          key={key}
+                          className={`length-chip ${draft.creativity === key ? 'length-chip-active' : ''}`}
+                          onClick={() => set('creativity', key)}
+                          type="button"
+                          title={cfg.hint}
+                        >
+                          <span className="length-label">{cfg.label}</span>
+                          <span className="length-hint">{cfg.hint.slice(0, 10)}</span>
                         </button>
                       )
                     )}
@@ -338,6 +364,75 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
                       压缩触发后，状态栏右侧显示「📦 ×N」徽章。<br />
                       连续失败 3 次触发熔断（显示⚠），可切换章节重置状态。
                     </div>
+                  </div>
+                </div>
+              </div>
+            )}
+
+            {/* ── 外观 ── */}
+            {category === 'appearance' && (
+              <div className="settings-section">
+                <div className="settings-section-title">编辑器外观</div>
+
+                {/* 字号 */}
+                <div className="settings-row">
+                  <div className="settings-row-label"><span>正文字号</span></div>
+                  <div className="settings-row-desc">
+                    影响写作区正文显示大小（Ctrl+= / Ctrl+- 也可临时调整）
+                  </div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px' }}>
+                    <input
+                      type="range"
+                      min={12} max={26} step={1}
+                      value={draft.editorFontSize ?? 17}
+                      onChange={e => set('editorFontSize', Number(e.target.value))}
+                      style={{ width: '140px' }}
+                    />
+                    <span style={{ fontSize: '13px', color: 'var(--text-primary)', minWidth: '32px' }}>
+                      {draft.editorFontSize ?? 17}px
+                    </span>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: '12px', padding: '3px 8px' }}
+                      onClick={() => set('editorFontSize', 17)}
+                    >重置</button>
+                  </div>
+                  {/* 预览 */}
+                  <div
+                    style={{
+                      marginTop: '10px',
+                      padding: '10px 14px',
+                      background: 'var(--bg-input)',
+                      borderRadius: 'var(--radius-sm)',
+                      border: '1px solid var(--border)',
+                      fontFamily: draft.editorFont ?? "'Noto Serif SC', serif",
+                      fontSize: `${draft.editorFontSize ?? 17}px`,
+                      lineHeight: 2.05,
+                      color: 'var(--text-primary)',
+                    }}
+                  >
+                    这是一段示例文字，春风又绿江南岸，明月何时照我还。
+                  </div>
+                </div>
+
+                <div className="settings-divider" />
+
+                {/* 字体 */}
+                <div className="settings-row">
+                  <div className="settings-row-label"><span>正文字体</span></div>
+                  <div className="settings-row-desc">选择编辑区显示字体</div>
+                  <div className="settings-font-options">
+                    {EDITOR_FONT_OPTIONS.map(opt => (
+                      <button
+                        key={opt.value}
+                        type="button"
+                        className={`settings-font-item ${(draft.editorFont ?? EDITOR_FONT_OPTIONS[0].value) === opt.value ? 'settings-font-active' : ''}`}
+                        onClick={() => set('editorFont', opt.value)}
+                        style={{ fontFamily: opt.value }}
+                      >
+                        {opt.label}
+                      </button>
+                    ))}
                   </div>
                 </div>
               </div>

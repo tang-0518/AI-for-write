@@ -22,10 +22,9 @@ import { ConsistencyPanel }     from './components/ConsistencyPanel';
 import { CrossChapterSearch }   from './components/CrossChapterSearch';
 import { OutlinePanel }         from './components/OutlinePanel';
 import { SceneTemplates }       from './components/SceneTemplates';
-import { FocusModeOverlay }     from './components/FocusModeOverlay';
+import { StyleLearningPanel }   from './components/StyleLearningPanel';
 import { ShortcutHelpPanel }    from './components/ShortcutHelpPanel';
 import { StatsPanel }           from './components/StatsPanel';
-import { useFocusTimer }        from './hooks/useFocusTimer';
 import { useWritingStats }      from './hooks/useWritingStats';
 import { useStorage }           from './hooks/useStorage';
 import { useEditor }            from './hooks/useEditor';
@@ -37,6 +36,7 @@ import { useChapterComplete }   from './hooks/useChapterComplete';
 import { useSnapshots }         from './hooks/useSnapshots';
 import { useOutline }           from './hooks/useOutline';
 import { useTheme }             from './hooks/useTheme';
+import { useStyleLearning }     from './hooks/useStyleLearning';
 import { useOnlineStatus }      from './hooks/useOnlineStatus';
 import type { Draft }           from './hooks/useBooks';
 import { checkConsistency }     from './api/gemini';
@@ -47,9 +47,33 @@ import { DEFAULT_SETTINGS }     from './types';
 import type { AppSettings }     from './types';
 import { migrateSettings }      from './utils/settingsMigration';
 import { getCacheStats }        from './api/cache';
+import { extractWritingPreference } from './api/gemini';
 import { migrateFromLocalStorage } from './db/index';
+import { formatStyleForPrompt }    from './api/styleAnalysis';
 import { PREV_CHAPTER_TAIL_CHARS } from './config/constants';
 import './App.css';
+
+// 按中文句末标点拆分长段落，保留标点在句尾
+function splitBySentenceEnd(text: string): string[] {
+  const result: string[] = [];
+  let current = '';
+  for (let i = 0; i < text.length; i++) {
+    current += text[i];
+    if ('。！？'.includes(text[i])) {
+      // 右引号/右括号紧跟句末标点时一并归入本句
+      const next = text[i + 1] ?? '';
+      if ('」』"）)'.includes(next)) {
+        current += next;
+        i++;
+      }
+      result.push(current.trim());
+      current = '';
+    }
+  }
+  if (current.trim()) result.push(current.trim());
+  // 若拆出的句子少于2个，说明无句末标点，整段作为一个段落
+  return result.length >= 2 ? result : [text];
+}
 
 function App() {
   const [rawSettings, setSettings] = useStorage<AppSettings>('novel-ai-settings', DEFAULT_SETTINGS);
@@ -59,7 +83,6 @@ function App() {
 
   // ── UI 状态（纯视图开关，无业务逻辑） ─────────────────────
   const [showSettings, setShowSettings]       = useState(false);
-  const [focusMode, setFocusMode]             = useState(false);
   const [showInstruction, setShowInstruction] = useState(false);
   const [showMemory, setShowMemory]           = useState(false);
   const [findMode, setFindMode]               = useState<'find' | 'replace' | null>(null);
@@ -74,12 +97,12 @@ function App() {
   const [showSceneTemplates, setShowSceneTemplates] = useState(false);
   const [showShortcutHelp, setShowShortcutHelp]     = useState(false);
   const [showStats, setShowStats]                   = useState(false);
+  const [showStyleLearning, setShowStyleLearning]   = useState(false);
   const [consistencyIssues, setConsistencyIssues] = useState<ConsistencyIssue[] | null>(null);
   const [isCheckingConsistency, setIsCheckingConsistency] = useState(false);
   const [consistencyError, setConsistencyError] = useState<string | null>(null);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
   const [synopsisVisible, setSynopsisVisible] = useState(true);
-  const [editorFontSize, setEditorFontSize]   = useStorage<number>('novel-editor-font-size', 17);
   const [completedChapterIdsArr, setCompletedChapterIdsArr] = useStorage<string[]>('novel-completed-chapters', []);
   const completedChapterIds = new Set(completedChapterIdsArr);
 
@@ -87,7 +110,7 @@ function App() {
   const {
     books, chapters, activeBook, activeDraft,
     activeBookId, activeDraftId, loaded: booksLoaded,
-    bookChapters, createBook, updateBookMeta, deleteBook,
+    bookChapters, createBook, createBookWithChapters, updateBookMeta, deleteBook,
     switchBook, selectDraft, createChapter, deleteChapter,
     updateChapterTitle, updateContent, updateContextState,
     reorderChapters, flushAll,
@@ -98,6 +121,23 @@ function App() {
     add: addMemory, update: updateMemory, remove: removeMemory,
     saveTruthFiles, memoryContext, buildContextForQuery,
   } = useMemory(activeBookId);
+
+  // ── 文风学习 ─────────────────────────────────────────────
+  const {
+    profiles: styleProfiles,
+    status: styleStatus,
+    errorMsg: styleError,
+    createProfile: createStyleProfile,
+    deleteProfile: deleteStyleProfile,
+    renameProfile: renameStyleProfile,
+  } = useStyleLearning(settings);
+
+  // 激活档案对应的 prompt 字符串（供 useEditor 注入续写）
+  const activeStyleBlock = (() => {
+    const prof = styleProfiles.find(p => p.id === settings.imitationProfileId);
+    if (!prof || !settings.imitationMode) return '';
+    return formatStyleForPrompt(prof, 'full');
+  })();
 
   // ── 初始化 ───────────────────────────────────────────────
   useEffect(() => {
@@ -119,10 +159,10 @@ function App() {
 
   const {
     state, setContent, setSelectionRange,
-    continueWriting, acceptContinuation, rejectContinuation,
+    continueWriting, acceptContinuation, rejectContinuation, resumeWriting,
     polish, acceptPolish, rejectPolish,
     generateVersions, selectVersion, dismissVersions,
-    clear, undoClear, insertAtCursor,
+    clear, undoClear, insertAtCursor, resetBlocks,
   } = useEditor(
     settings,
     activeDraft?.content ?? '',
@@ -131,11 +171,13 @@ function App() {
     activeDraft?.contextState,
     (next) => { if (activeDraftId) updateContextState(activeDraftId, next); },
     prevChapterTail,
+    activeStyleBlock,
   );
 
   // 章节���换时同步编辑器内容
   useEffect(() => {
     if (activeDraft) setContent(activeDraft.content);
+    resetBlocks();
     setEditingChapterTitle(false);
   // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [activeDraftId]);
@@ -154,8 +196,8 @@ function App() {
     onFind:         () => setFindMode(prev => prev === 'find'    ? null : 'find'),
     onReplace:      () => setFindMode(prev => prev === 'replace' ? null : 'replace'),
     onCrossSearch:  () => setShowCrossSearch(v => !v),
-    onFontIncrease: () => setEditorFontSize(s => Math.min(26, s + 1)),
-    onFontDecrease: () => setEditorFontSize(s => Math.max(13, s - 1)),
+    onFontIncrease: () => setSettings(s => ({ ...s, editorFontSize: Math.min(26, (s.editorFontSize ?? 17) + 1) })),
+    onFontDecrease: () => setSettings(s => ({ ...s, editorFontSize: Math.max(12, (s.editorFontSize ?? 17) - 1) })),
     onHelp:         () => setShowShortcutHelp(v => !v),
   });
 
@@ -166,10 +208,8 @@ function App() {
 
   const outline = useOutline(activeBookId);
 
-  const currentWordCount = state.content.replace(/\s/g, '').length;
   const allChaptersTotalWords = bookChapters(activeBookId).reduce((s, c) => s + c.content.replace(/\s/g, '').length, 0);
   const { stats: writingStats, recordAiAccepted, recordAiRejected } = useWritingStats(allChaptersTotalWords);
-  const { state: timerState, startWork, pause: pauseTimer, resume: resumeTimer, stop: stopTimer } = useFocusTimer(currentWordCount);
 
   const chapterComplete = useChapterComplete({
     activeDraft,
@@ -192,6 +232,48 @@ function App() {
   const handleClear = useCallback(() => {
     if (window.confirm('确认清空全部内容？5 秒内可撤销。')) clear();
   }, [clear]);
+
+  // 一键排版：段首缩进 + 句末自动分段 + 去多余空行
+  const handleFormat = useCallback(() => {
+    const raw = state.content;
+    if (!raw.trim()) return;
+
+    // 按两个及以上连续换行切分段落块
+    const blocks = raw.split(/\n{2,}/);
+    const result: string[] = [];
+
+    for (const block of blocks) {
+      const text = block.trim();
+      if (!text) continue;
+
+      // 每个段落块内可能有多行（单换行），逐行处理后再按句末分段
+      const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
+
+      for (const line of rawLines) {
+        const charCount = line.replace(/\s/g, '').length;
+
+        if (charCount > 60) {
+          // 长段落：按中文句末标点自动拆分为多个短段
+          const sentences = splitBySentenceEnd(line);
+          for (const s of sentences) {
+            if (s.trim()) {
+              result.push('\u3000\u3000' + s.trim());
+              result.push('');    // 段落间空行
+            }
+          }
+        } else {
+          // 短段落直接加首行缩进
+          result.push('\u3000\u3000' + line);
+          result.push('');
+        }
+      }
+    }
+
+    // 去掉末尾多余空行
+    while (result.length && result[result.length - 1] === '') result.pop();
+
+    setContent(result.join('\n'));
+  }, [state.content, setContent]);
 
   const handleCheckConsistency = useCallback(async () => {
     if (!activeDraft || !settings.apiKey) {
@@ -240,7 +322,7 @@ function App() {
 
   // ── 渲染 ──────────────────────────────────────────────────
   return (
-    <div className={`app ${focusMode ? 'app-focus' : ''}`}>
+    <div className="app">
       <div className="bg-orb bg-orb-1" />
       <div className="bg-orb bg-orb-2" />
       <div className="bg-orb bg-orb-3" />
@@ -250,17 +332,6 @@ function App() {
           <div className="db-loading-spinner" />
           <span className="db-loading-text">正在加载本地数据库…</span>
         </div>
-      )}
-
-      {focusMode && (
-        <FocusModeOverlay
-          timerState={timerState}
-          onStartWork={startWork}
-          onPause={pauseTimer}
-          onResume={resumeTimer}
-          onStop={stopTimer}
-          onExitFocus={() => { stopTimer(); setFocusMode(false); }}
-        />
       )}
 
       <Toolbar
@@ -276,11 +347,13 @@ function App() {
         currentTheme={theme}
         themes={THEMES}
         onShowMemory={() => setShowMemory(true)}
+        onShowStyleLearning={() => setShowStyleLearning(true)}
+        imitationMode={settings.imitationMode}
+        modularWriting={settings.modularWriting}
         onClear={handleClear}
         onUndo={undoClear}
         onOpenSettings={() => setShowSettings(true)}
         onStyleChange={(style) => setSettings({ ...settings, style })}
-        onToggleFocus={() => setFocusMode(true)}
         onToggleInstruction={() => setShowInstruction(v => !v)}
         onThemeChange={setTheme}
       />
@@ -288,7 +361,9 @@ function App() {
       {showInstruction && (
         <InstructionBar
           value={settings.customPrompt}
+          presets={settings.promptPresets ?? []}
           onChange={v => setSettings({ ...settings, customPrompt: v })}
+          onPresetsChange={presets => setSettings({ ...settings, promptPresets: presets })}
         />
       )}
 
@@ -308,6 +383,7 @@ function App() {
           onRenameChapter={updateChapterTitle}
           onRenameBook={(id, title) => updateBookMeta(id, { title })}
           onReorderChapter={reorderChapters}
+          onOpenOutline={() => setShowOutline(true)}
         />
 
         <main className="main-content">
@@ -328,11 +404,6 @@ function App() {
                 <span className="book-context-synopsis">{activeBook.synopsis}</span>
               )}
               <div className="book-context-actions">
-                <span className="font-size-control" title={`字号 ${editorFontSize}px（Ctrl+= 放大 / Ctrl+- 缩小）`}>
-                  <button className="btn btn-ghost font-size-btn" onClick={() => setEditorFontSize(s => Math.max(13, s - 1))} disabled={editorFontSize <= 13}>A−</button>
-                  <span className="font-size-val">{editorFontSize}</span>
-                  <button className="btn btn-ghost font-size-btn" onClick={() => setEditorFontSize(s => Math.min(26, s + 1))} disabled={editorFontSize >= 26}>A+</button>
-                </span>
                 <button
                   className="btn btn-ghost"
                   style={{ fontSize: 12 }}
@@ -340,14 +411,6 @@ function App() {
                   title="写作统计"
                 >
                   📊 统计
-                </button>
-                <button
-                  className="btn btn-ghost"
-                  style={{ fontSize: 12 }}
-                  onClick={() => setShowOutline(true)}
-                  title="打开大纲规划板"
-                >
-                  📋 大纲
                 </button>
                 <button
                   className="btn btn-ghost"
@@ -454,6 +517,14 @@ function App() {
               />
               <button
                 className="btn btn-ghost scene-tpl-btn"
+                onClick={handleFormat}
+                disabled={!state.content.trim()}
+                title="一键排版：段首缩进 + 去多余空行"
+              >
+                ¶
+              </button>
+              <button
+                className="btn btn-ghost scene-tpl-btn"
                 onClick={() => setShowSceneTemplates(true)}
                 title="插入场景模板"
               >
@@ -480,12 +551,14 @@ function App() {
                 hasPendingContinuation={state.hasPendingContinuation}
                 pendingPolish={state.pendingPolish}
                 focusRange={findFocusRange}
-                fontSize={editorFontSize}
+                fontSize={settings.editorFontSize}
+                editorFont={settings.editorFont}
+                writingBlocks={settings.modularWriting ? state.writingBlocks : []}
                 onChange={setContent}
                 onContinue={continueWriting}
                 onAcceptContinuation={() => { acceptContinuation(); recordAiAccepted(); }}
                 onRejectContinuation={() => { rejectContinuation(); recordAiRejected(); }}
-                onAcceptPolish={() => { acceptPolish(); recordAiAccepted(); }}
+                onAcceptPolish={()  => { acceptPolish(); recordAiAccepted(); }}
                 onRejectPolish={() => { rejectPolish(); recordAiRejected(); }}
                 onSelectionChange={setSelectionRange}
               />
@@ -495,9 +568,23 @@ function App() {
                 isPolishing={state.isPolishing}
                 pendingContinuation={state.pendingContinuation}
                 hasPendingContinuation={state.hasPendingContinuation}
+                isTruncated={state.isTruncated}
                 pendingPolish={state.pendingPolish}
-                onAcceptContinuation={() => { acceptContinuation(); recordAiAccepted(); }}
+                onAcceptContinuation={() => {
+                  const accepted = state.pendingContinuation;
+                  acceptContinuation();
+                  recordAiAccepted();
+                  // 异步提取风格偏好，写入记忆（不阻塞主流程）
+                  if (accepted.length >= 80 && settings.apiKey) {
+                    extractWritingPreference(accepted, settings).then(pref => {
+                      if (pref.trim()) {
+                        addMemory({ name: '写作风格偏好（自动）', description: '从接受的续写中提炼的风格规律', type: 'project', content: pref, bookId: activeBookId });
+                      }
+                    }).catch(() => {});
+                  }
+                }}
                 onRejectContinuation={() => { rejectContinuation(); recordAiRejected(); }}
+                onResumeWriting={resumeWriting}
                 onAcceptPolish={() => { acceptPolish(); recordAiAccepted(); }}
                 onRejectPolish={() => { rejectPolish(); recordAiRejected(); }}
               />
@@ -510,11 +597,13 @@ function App() {
         content={state.content}
         isStreaming={state.isStreaming}
         isPolishing={state.isPolishing}
+        isGeneratingVersions={state.isGeneratingVersions}
         error={state.error}
         savedAt={savedAt}
         wordGoal={settings.wordGoal ?? 0}
         compactionCount={activeDraft?.contextState.compactionCount ?? 0}
         compactDisabled={activeDraft?.contextState.compactDisabled ?? false}
+        creativity={settings.creativity}
       />
 
       {showMemory && (
@@ -559,6 +648,10 @@ function App() {
           isFirst={books.length === 0}
           onConfirm={async (title, synopsis) => {
             await createBook(title, synopsis);
+            setShowCreateBook(false);
+          }}
+          onConfirmImport={async (bookTitle, chapters) => {
+            await createBookWithChapters(bookTitle, '', chapters);
             setShowCreateBook(false);
           }}
           onCancel={() => setShowCreateBook(false)}
@@ -626,17 +719,42 @@ function App() {
         />
       )}
 
+      {/* 文风学习面板 */}
+      {showStyleLearning && (
+        <StyleLearningPanel
+          profiles={styleProfiles}
+          status={styleStatus}
+          errorMsg={styleError}
+          drafts={bookChapters(activeBookId)}
+          sourceBookId={activeBookId ?? ''}
+          activeProfileId={settings.imitationProfileId ?? ''}
+          imitationMode={settings.imitationMode ?? false}
+          modularWriting={settings.modularWriting ?? false}
+          onCreateProfile={createStyleProfile}
+          onDeleteProfile={deleteStyleProfile}
+          onRenameProfile={renameStyleProfile}
+          onSelectProfile={id => setSettings({ ...settings, imitationProfileId: id })}
+          onToggleImitation={on => setSettings({ ...settings, imitationMode: on })}
+          onToggleModular={on => setSettings({ ...settings, modularWriting: on })}
+          onClose={() => setShowStyleLearning(false)}
+        />
+      )}
+
       {/* 大纲规划板 */}
       {showOutline && (
         <OutlinePanel
           cards={outline.cards}
+          bookTitle={activeBook?.title ?? ''}
           bookSynopsis={activeBook?.synopsis ?? ''}
           isGenerating={isGeneratingOutline}
+          canvasPositions={outline.canvasPositions}
+          settings={settings}
           onAdd={outline.addCard}
           onUpdate={outline.updateCard}
           onDelete={outline.deleteCard}
           onReorder={outline.reorderCards}
           onGenerate={handleGenerateOutline}
+          onNodeMove={outline.setNodePosition}
           onClose={() => setShowOutline(false)}
         />
       )}

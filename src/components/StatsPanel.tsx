@@ -57,7 +57,7 @@ export function StatsPanel({ stats, onClose }: StatsPanelProps) {
               </div>
               <div className="stats-card-label">AI 接受率</div>
               {aiAcceptRate > 0 && (
-                <Bar ratio={aiAcceptRate} color="var(--accent, #7c3aed)" />
+                <Bar ratio={aiAcceptRate} color="var(--purple-500)" />
               )}
             </div>
           </div>

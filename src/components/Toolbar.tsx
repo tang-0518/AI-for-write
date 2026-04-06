@@ -20,13 +20,15 @@ interface ToolbarProps {
   currentTheme?: string;
   themes?: Theme[];
   onShowMemory: () => void;
+  onShowStyleLearning?: () => void;
   onClear: () => void;
   onUndo: () => void;
   onOpenSettings: () => void;
   onStyleChange: (style: WritingStyle) => void;
-  onToggleFocus: () => void;
   onToggleInstruction: () => void;
   onThemeChange?: (id: string) => void;
+  imitationMode?: boolean;
+  modularWriting?: boolean;
 }
 
 export function Toolbar({
@@ -42,13 +44,15 @@ export function Toolbar({
   currentTheme,
   themes,
   onShowMemory,
+  onShowStyleLearning,
   onClear,
   onUndo,
   onOpenSettings,
   onStyleChange,
-  onToggleFocus,
   onToggleInstruction,
   onThemeChange,
+  imitationMode = false,
+  modularWriting = false,
 }: ToolbarProps) {
   const [copied, setCopied] = useState(false);
   const [styleOpen, setStyleOpen] = useState(false);
@@ -137,7 +141,7 @@ export function Toolbar({
       {/* 品牌 */}
       <div className="toolbar-brand">
         <span className="brand-name">AI<span> for Write</span></span>
-        <span className="brand-subtitle">v0.2</span>
+        <span className="brand-subtitle">v0.3 β</span>
       </div>
 
       <div className="toolbar-actions">
@@ -181,6 +185,22 @@ export function Toolbar({
           <span>◈</span>
           <span className="btn-ghost-label">记忆{memoryCount > 0 ? ` ${memoryCount}` : ''}</span>
         </button>
+
+        {/* 文风学习 */}
+        {onShowStyleLearning && (
+          <button
+            className="btn btn-ghost"
+            onClick={onShowStyleLearning}
+            title="文风学习：分析导入小说的写作风格，开启模仿续写"
+            style={imitationMode ? { color: 'var(--purple-400)', fontWeight: 600 } : undefined}
+          >
+            <span>🎨</span>
+            <span className="btn-ghost-label">
+              {imitationMode ? '仿写●' : '文风'}
+              {modularWriting && !imitationMode ? '◈' : ''}
+            </span>
+          </button>
+        )}
 
         {/* 全局指令 */}
         <button
@@ -264,16 +284,6 @@ export function Toolbar({
         >
           <span>🗑</span>
           <span className="btn-ghost-label">清空</span>
-        </button>
-
-        {/* 聚焦 */}
-        <button
-          className="btn btn-ghost"
-          onClick={onToggleFocus}
-          title="聚焦模式"
-        >
-          <span>⛶</span>
-          <span className="btn-ghost-label">聚焦</span>
         </button>
 
         {/* 主题 */}
