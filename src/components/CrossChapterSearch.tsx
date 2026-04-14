@@ -97,3 +97,5 @@ export function CrossChapterSearch({ chapters, onNavigate, onClose }: CrossChapt
     </div>
   );
 }
+
+export default CrossChapterSearch;

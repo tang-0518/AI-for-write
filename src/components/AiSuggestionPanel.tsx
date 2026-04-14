@@ -139,6 +139,7 @@ export function AiSuggestionPanel({
           </div>
         </>
       )}
+
     </div>
   );
 }

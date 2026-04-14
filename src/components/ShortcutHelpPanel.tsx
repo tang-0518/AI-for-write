@@ -79,3 +79,5 @@ export function ShortcutHelpPanel({ onClose }: ShortcutHelpPanelProps) {
     </div>
   );
 }
+
+export default ShortcutHelpPanel;

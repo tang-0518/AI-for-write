@@ -87,9 +87,14 @@ export function StatusBar({ content, isStreaming, isPolishing, isGeneratingVersi
           <span className="stat-value">{chineseCount.toLocaleString()}</span>
           <span className="stat-label">汉字</span>
         </span>
+        <span className="stat-divider">/</span>
+        <span className="stat-item">
+          <span className="stat-value">{charCount.toLocaleString()}</span>
+          <span className="stat-label">字符</span>
+        </span>
         {goalActive && (
           <>
-            <span className="stat-divider">/</span>
+            <span className="stat-divider">·</span>
             <span className="stat-item">
               <span className={`stat-value ${goalDone ? 'goal-reached' : 'stat-goal'}`}>
                 {wordGoal.toLocaleString()}

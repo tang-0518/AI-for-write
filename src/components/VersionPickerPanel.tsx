@@ -39,3 +39,5 @@ export function VersionPickerPanel({ versions, onSelect, onDismiss }: VersionPic
     </div>
   );
 }
+
+export default VersionPickerPanel;

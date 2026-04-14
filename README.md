@@ -1,102 +1,124 @@
-# AI for Write — Your AI Novel Co-Author
+# AI for Write — AI 小说辅助创作工具
 
-> **Stop staring at a blank page. Let AI write with you — not for you.**
+> **不是让 AI 替你写，是让 AI 陪你写。**
 
-A fully **browser-based** AI writing assistant for novels, stories, and long-form fiction. Powered by Google Gemini 2.5 Pro. Zero backend. Zero data leaks. Everything lives in your browser.
+基于浏览器的 AI 长篇小说辅助创作工具。由 Google Gemini 2.5 驱动，**零后端，所有数据存在本地**，API Key 直连 Google，不经任何中转。
 
-![Version](https://img.shields.io/badge/version-0.3.0--beta-brightgreen)
+![Version](https://img.shields.io/badge/version-0.4.0-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Stack](https://img.shields.io/badge/stack-React%2019%20%2B%20TypeScript%20%2B%20Vite-blueviolet)
-![AI](https://img.shields.io/badge/AI-Gemini%202.5%20Pro-orange)
+![AI](https://img.shields.io/badge/AI-Gemini%202.5-orange)
 ![Storage](https://img.shields.io/badge/storage-100%25%20local%20IndexedDB-green)
 
 ---
 
-## 🚀 What It Does
+## 能做什么
 
-You write a few sentences. AI continues. You decide what stays.
+你写几行，AI 接着写；你定方向，AI 帮你填细节。
 
-**AI for Write** acts like a co-author sitting next to you — it knows your characters, remembers your worldbuilding, matches your writing style, and keeps the story consistent across chapters. All without sending your manuscript to any cloud.
+**AI for Write** 像一个记得所有剧情的搭档——它知道你的角色是谁，记得前面发生了什么，能看懂你的写作风格，在你卡壳的时候随时接上。稿子不上云，API Key 不过中转，一切在你本地运行。
 
 ```
-You write:  "她踏入雨中，心跳加速，知道他正在注视着——"
-AI writes:  [3段张力十足的续写，匹配你的文风、人物设定与前情]
-You decide: Tab 接受 · Esc 拒绝 · 这是你的故事
+你写：  "她踏入雨中，心跳加速，知道他正在注视着——"
+AI 写：  [3 段张力十足的续写，匹配你的文风、角色设定与前情]
+你决定：Tab 接受 · Esc 拒绝 · 这是你的故事
 ```
 
 ---
 
-## ✨ What's New in v0.3 Beta
+## 更新历史
 
-### 文风学习系统（Style Learning）
+### v0.4.0（当前）
 
-| Feature | Description |
-|---------|-------------|
-| 📖 **TXT 小说导入** | 智能分章节解析，支持"第X章/节/回/卷"及数字编号，序章自动识别 |
-| 🎨 **AI 文风分析** | 选中任意章节，AI 分析8个维度：句式、对话、描写、视角、节奏、词汇、情感、独特规律 |
-| 📂 **文风档案管理** | 保存多份分析档案，随时切换，支持重命名与删除 |
-| ✍️ **仿写模式** | 开启后，续写 prompt 自动注入文风指令 + 范文段落，AI 输出贴近目标风格 |
+**本版本最大变化：知识图谱完全内置，不再依赖外部 MCP Server。**
 
-### 模块化写作（Modular Writing）
+| 模块 | 变更 |
+|------|------|
+| 🕸 **知识图谱内置化** | 图谱数据从 MCP Server JSONL 迁移到本地 IndexedDB，无需启动任何额外服务 |
+| 🧩 **完成章节自动建图** | 章节完成流程新增第3步：AI 自动提取实体和关系，写入图谱 |
+| 🔌 **去除 MCP 依赖** | `useNovelGraph` 重写为纯 IndexedDB 版本，消除所有 HTTP 调用 |
+| 🛠 **章节完成流程重构** | `useChapterComplete` Hook 拆分为纯函数 `completeChapter()`，逻辑更清晰，4步独立容错 |
+| 🧠 **记忆服务升级** | `memoryService.ts` 的角色/世界数据源从 MCP API 切换为直接读取 IndexedDB 图谱 |
+| 💡 **Gemini 2.5 兼容** | 修复 2.5 Pro 无法关闭 thinking 导致 token 被截断的问题，摘要和提取任务全部使用 `withNoThinking` |
 
-| Feature | Description |
-|---------|-------------|
-| 🟪 **彩色写作分块** | 每次 AI 续写生成一个彩色块，最多10种颜色循环，直观区分每次创作范围 |
-| 👁 **块颜色叠加层** | 编辑器内透明色块精准覆盖 AI 生成区域，不影响编辑体验 |
+### v0.3.0-beta
 
-### Prompt 工程优化
+| 模块 | 变更 |
+|------|------|
+| 🎨 **文风学习** | 上传参考文章，AI 提炼风格档案，后续续写自动融入 |
+| 🧩 **模块化写作** | 支持分场景/分视角写作，各模块独立上下文 |
+| ⚙️ **Prompt 工程优化** | 系统 Prompt 重构，减少幻觉，提升续写一致性 |
 
-| Feature | Description |
-|---------|-------------|
-| ⚙️ **systemInstruction 分离** | 角色设定与输出规则注入 Gemini `systemInstruction` 字段（可缓存），减少每次请求 token 消耗 |
-| 🏷 **XML 结构化消息** | 续写请求采用 `<续写><约束><背景><前文>` XML 分段，各段独立控制 token 预算 |
-| 📦 **分块润色** | 超长文本按段落边界切块，逐块串行润色，彻底解决长文润色 token 截断问题 |
+### v0.2.0
 
-### Bug Fixes
+| 模块 | 变更 |
+|------|------|
+| 🕸 **知识图谱（MCP 版）** | 引入本地 MCP Server，2D 力导向图谱，实体关系可视化 |
+| 👤 **角色胶囊系统** | 角色档案独立管理，一键注入 Prompt |
+| 🎣 **伏笔追踪器** | 创建 / 状态流转 / 紧急度标记 |
+| 🧠 **右侧记忆侧边栏** | AI 上下文看板、章节摘要、笔记、图谱内嵌 |
+| 📐 **侧边栏子视图** | 角色管理在侧边栏内切换，无弹窗跳转 |
 
-- 修复润色因 token 超限导致全文润色失效
-- 修复小说导入部分章节分割错误（补全序章、加强章节正则）
-- 修复大纲画布卡片颜色在各主题下显示异常
-- 修复文风分析在 Gemini 2.5 Pro 思考模型下返回空值（正确过滤 `thought` parts）
-- 修复模块化写作彩色层引发的 React `removeChild` DOM 异常
+### v0.1.0（初始版本）
+
+- AI 续写（流式输出）+ 润色（选段重写对比）
+- 多版本续写（3个方向供选择）
+- 长期记忆系统（角色/世界观/笔记 + 关键词评分）
+- 书籍 & 章节管理（多书多章，拖拽排序，800ms 自动保存）
+- 版本快照（支持回滚）
+- 大纲画布（AI 生成章节建议）
+- 跨章全文搜索
 
 ---
 
-## 🧠 Core Features
+## 核心功能
 
-### AI Writing Engine
-- **Continue Writing** — 流式续写，融合记忆库、前章尾段、文风档案
-- **Polish & Rewrite** — 选段润色，原文/润色版并排对比后接受
-- **Multi-Version** — 生成3个不同续写版本供选择
-- **Cancel anytime** — AbortController 随时中断流式输出
+### AI 写作引擎
+- **续写** — 流式输出，融合记忆库 + 近章摘要 + 知识图谱 + 文风档案
+- **润色** — 选段重写，原文 / 润色版并排对比后接受
+- **多版本续写** — 一次生成 3 个不同方向供选择
+- **随时中断** — 流式中断，不等待
 
-### Long-Term Memory System
-- 存储人物、世界观、写作规则、风格偏好
-- 关键词评分自动筛选最相关记忆注入 prompt
-- 上下文超限时自动压缩旧内容为摘要
-- 7个 Truth Files：`current_state` / `particle_ledger` / `pending_hooks` / `chapter_summaries` / `character_arcs` / `world_rules` / `timeline`
+### 知识图谱系统（IndexedDB 内置）
+- **2D 力导向图谱** — 自动布局，节点拖拽，侧边栏内嵌显示
+- **7种实体类型** — 角色 / 势力 / 道具 / 地点 / 事件 / 世界规则 / 伏笔
+- **自动建图** — 完成章节时 AI 自动提取实体和关系
+- **智能合并** — 同名实体自动合并，不产生重复条目
+- **完全本地** — 数据存在 IndexedDB，无需启动任何服务
 
-### Book & Chapter Management
+### 长期记忆系统
+- 存储人物、世界观、写作规则、章节摘要
+- 关键词相关性评分，自动筛选最相关内容注入 Prompt
+- 上下文超限时自动压缩为摘要
+- AI 上下文看板实时显示 token 分布
+
+### 角色胶囊系统
+- 每位角色独立档案：身份 / 性格 / 说话风格 / 外貌 / 目标
+- 一键生成写作上下文片段注入编辑器
+- 知识图谱节点点击自动打开对应角色详情
+
+### 书籍 & 章节管理
 - 多书多章层级，拖拽排序
 - 800ms 自动保存（IndexedDB）
 - 跨章全文搜索（`Ctrl+Shift+F`）
-- 版本快照，支持置顶保护
+- 版本快照，支持回滚
 - 大纲画布，AI 生成章节建议
 
-### Privacy by Design
+### 隐私优先
 - **零后端** — 无服务器、无中转、无埋点
-- API Key 仅存于 `localStorage`，只直接发往 Google API
-- 所有稿件数据存于本地 **IndexedDB**
+- API Key 仅存于 `localStorage`，直接发往 Google API
+- 所有稿件数据存于本地 IndexedDB
 
 ---
 
-## ⚡ Quickstart
+## 快速开始
 
-### 需要
+### 环境要求
 - Node.js 18+
 - [Gemini API Key](https://aistudio.google.com/app/apikey)（Google AI Studio 免费申请）
 
 ### 本地运行
+
 ```bash
 git clone https://github.com/tang-0518/AI-.git
 cd AI-
@@ -104,15 +126,19 @@ npm install
 npm run dev
 ```
 
-打开 `http://localhost:5173` → 在设置中粘贴 API Key → 开始写作。
+打开 `http://localhost:5173` → 设置中粘贴 API Key → 开始写作。
 
-### 部署（静态，免费）
+### 静态部署（免费）
+
 ```bash
 npm run build
 # 将 dist/ 上传至 Vercel / Netlify / GitHub Pages
 ```
 
-### 可选：通过环境变量预填 API Key
+> v0.4 起知识图谱完全内置于前端，静态部署也能使用全部功能。
+
+### 环境变量预填 API Key（可选）
+
 ```bash
 # .env.local（不会提交到 git）
 VITE_GEMINI_API_KEY=your_key_here
@@ -121,7 +147,7 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 
 ---
 
-## ⌨️ Keyboard Shortcuts
+## 键盘快捷键
 
 | 快捷键 | 功能 |
 |--------|------|
@@ -133,67 +159,74 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 | `Ctrl + H` | 查找 & 替换 |
 | `Ctrl + Shift + F` | 全书搜索 |
 | `Ctrl + =` / `-` | 字号放大 / 缩小 |
+| `Ctrl + S` | 手动保存 |
 | `?` | 查看全部快捷键 |
 
 ---
 
-## 🏗 Tech Stack
+## 技术栈
 
-| Layer | Technology |
-|-------|-----------|
-| Framework | React 19 + TypeScript |
-| Build | Vite 8 |
-| AI | Google Gemini API（SSE 流式） |
-| Storage | IndexedDB — 零后端 |
-| Styling | Pure CSS，深色主题，5 套配色方案 |
+| 层 | 技术 |
+|----|------|
+| 前端框架 | React 19 + TypeScript |
+| 构建工具 | Vite |
+| AI 模型 | Google Gemini API（SSE 流式） |
+| 本地存储 | IndexedDB（v6，8 个 object store） |
+| 样式 | 纯 CSS，深色主题，5 套主题配色 |
 
 ---
 
-## 📁 Project Structure
+## 项目结构
 
 ```
 src/
 ├── api/
-│   ├── gemini.ts              # Gemini 流式续写 + 润色（systemInstruction + XML prompt）
-│   ├── styleAnalysis.ts       # 文风 AI 分析（思考模型兼容）     [NEW v0.3]
-│   ├── cache.ts               # L1/L2 双层请求缓存
+│   ├── gemini.ts              # Gemini 流式续写 + 所有 AI 调用
+│   ├── memoryService.ts       # 上下文组装（IndexedDB 图谱 + 记忆）
+│   ├── cache.ts               # 请求缓存
 │   └── contextCompression.ts  # 长上下文自动压缩
+├── graph/                     # 知识图谱（v0.4 内置）
+│   ├── types.ts               # 实体 / 关系类型定义
+│   ├── storage.ts             # IndexedDB CRUD + 智能合并
+│   └── extractor.ts           # AI 提取实体关系 → 写入图谱
+├── memory/
+│   ├── types.ts               # 记忆条目类型
+│   ├── storage.ts             # 记忆 CRUD + token 预算分配
+│   └── completeChapter.ts     # 完成章节四步流程（纯函数）
+├── capsule/                   # 角色胶囊类型定义
 ├── components/
-│   ├── Editor.tsx             # 核心编辑器（ghost 文字 + 模块化色块层）
-│   ├── StyleLearningPanel.tsx # 文风学习面板（导入/分析/管理）   [NEW v0.3]
-│   ├── OutlineCanvas.tsx      # 大纲画布（主题色修复）            [NEW v0.3]
-│   ├── ImportPreviewModal.tsx # TXT 导入预览弹窗                  [NEW v0.3]
-│   ├── Sidebar.tsx            # 书目 + 章节二级侧边栏
-│   ├── MemoryPanel.tsx        # 长期记忆管理器
-│   ├── StatsPanel.tsx         # 写作统计面板
-│   └── VersionPickerPanel.tsx # 多版本选择面板
+│   ├── Editor.tsx             # 核心编辑器
+│   ├── MemorySidebar.tsx      # 右侧侧边栏（图谱 / 角色 / 摘要 / 伏笔）
+│   ├── MiniGraph.tsx          # 2D 力导向知识图谱（Canvas）
+│   ├── GraphPanel.tsx         # 3D 全屏知识图谱（Canvas）
+│   ├── CharacterPanel.tsx     # 角色管理面板（图谱 + 胶囊合并）
+│   ├── PlotHooksPanel.tsx     # 伏笔追踪面板
+│   ├── ChapterCompleteModal.tsx # 完成章节弹窗（4步进度）
+│   └── ...
 ├── hooks/
-│   ├── useEditor.ts           # 编辑器状态 + AI 调用 + 模块化写作块
-│   ├── useStyleLearning.ts    # 文风档案 CRUD（IndexedDB）        [NEW v0.3]
+│   ├── useEditor.ts           # 编辑器状态 + AI 调用
 │   ├── useBooks.ts            # 书目 + 章节 CRUD
-│   └── useMemory.ts           # 记忆 CRUD + 相关性评分
-├── types/
-│   └── styleProfile.ts        # StyleProfile / StyleAnalysis 类型 [NEW v0.3]
-├── utils/
-│   ├── txtImport.ts           # TXT 智能分章节解析                [NEW v0.3]
-│   └── settingsMigration.ts   # 设置 schema 版本迁移（v4）
-└── types.ts                   # 全局类型 + DEFAULT_SETTINGS
+│   ├── useMemory.ts           # 记忆 CRUD + 上下文组装
+│   ├── useNovelGraph.ts       # 知识图谱 Hook（IndexedDB 版）
+│   ├── useCapsules.ts         # 角色胶囊 CRUD
+│   └── usePlotHooks.ts        # 伏笔 CRUD
+├── db/
+│   └── index.ts               # IndexedDB 封装（v6，含图谱 store）
+└── types.ts                   # 全局类型 + 默认设置
 ```
 
 ---
 
-## 🗺 Roadmap
+## 后续计划
 
-- [ ] 对话生成面板
-- [ ] 段落改写模式（3种角度）
-- [ ] 伏笔追踪器（行内标注）
-- [ ] 人物卡片系统（外貌 / 性格 / 关系网）
-- [ ] 跨章时间线可视化
-- [ ] 全书情节漏洞检测
-- [ ] IndexedDB 统一仓储层抽象
+- [ ] 时间线可视化（跨章节事件轴）
+- [ ] 全书情节一致性检测（章节间逻辑矛盾自动标记）
+- [ ] 段落改写模式（3种角度并排对比）
+- [ ] 图谱全屏视图优化（分层布局，按实体类型着色）
+- [ ] 移动端适配
 
 ---
 
 ## License
 
-MIT — free to use, fork, and build on.
+MIT — 自由使用、Fork、二次开发。

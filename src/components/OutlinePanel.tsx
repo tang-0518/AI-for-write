@@ -252,3 +252,5 @@ export function OutlinePanel({
     </div>
   );
 }
+
+export default OutlinePanel;

@@ -103,3 +103,5 @@ export function StatsPanel({ stats, onClose }: StatsPanelProps) {
     </div>
   );
 }
+
+export default StatsPanel;

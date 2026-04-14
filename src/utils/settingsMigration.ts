@@ -56,6 +56,15 @@ const MIGRATIONS: Migration[] = [
       if (s.modularWriting      === undefined) s.modularWriting      = DEFAULT_SETTINGS.modularWriting;
     },
   },
+  {
+    version: 5,
+    up(s) {
+      // v4 → v5：删除 general 风格，迁移到 romance
+      if ((s.style as string) === 'general' || s.style === undefined) {
+        s.style = 'romance';
+      }
+    },
+  },
 ];
 
 /**

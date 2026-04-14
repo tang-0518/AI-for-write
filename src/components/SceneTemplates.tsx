@@ -130,3 +130,5 @@ export function SceneTemplates({ onInsert, onClose }: SceneTemplatesProps) {
     </div>
   );
 }
+
+export default SceneTemplates;

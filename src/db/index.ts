@@ -1,17 +1,20 @@
 // =============================================================
 // db/index.ts — IndexedDB 封装
 //
-// 数据库：novel-assistant  版本：3
+// 数据库：novel-assistant  版本：6
 // Object Stores：
-//   books          — keyPath: 'id'，一条记录 = 一本书
-//   drafts         — keyPath: 'id'，一条记录 = 一个章节（含 bookId）
-//   memories       — keyPath: 'id'，一条记录 = 一条记忆
-//   style_profiles — keyPath: 'id'，一条记录 = 一份文风档案
-//   kv             — 通用键值对（排序、激活 ID 等）
+//   books               — keyPath: 'id'，一条记录 = 一本书
+//   drafts              — keyPath: 'id'，一条记录 = 一个章节（含 bookId）
+//   memories            — keyPath: 'id'，一条记录 = 一条记忆
+//   style_profiles      — keyPath: 'id'，一条记录 = 一份文风档案
+//   kv                  — 通用键值对（排序、激活 ID 等）
+//   character_capsules  — keyPath: 'id'，一条记录 = 一个角色胶囊（v5）
+//   graph_entities      — keyPath: 'id'，一条记录 = 一个图谱实体（v6）
+//   graph_relations     — keyPath: 'id'，一条记录 = 一条图谱关系（v6）
 // =============================================================
 
 const DB_NAME    = 'novel-assistant';
-const DB_VERSION = 3;
+const DB_VERSION = 6;
 
 let _db: IDBDatabase | null = null;
 
@@ -32,6 +35,17 @@ export function openDB(): Promise<IDBDatabase> {
       // v3 stores
       if (!db.objectStoreNames.contains('style_profiles'))
         db.createObjectStore('style_profiles', { keyPath: 'id' });
+      // v4 stores
+      if (!db.objectStoreNames.contains('plot_hooks'))
+        db.createObjectStore('plot_hooks', { keyPath: 'id' });
+      // v5 stores
+      if (!db.objectStoreNames.contains('character_capsules'))
+        db.createObjectStore('character_capsules', { keyPath: 'id' });
+      // v6 stores
+      if (!db.objectStoreNames.contains('graph_entities'))
+        db.createObjectStore('graph_entities',  { keyPath: 'id' });
+      if (!db.objectStoreNames.contains('graph_relations'))
+        db.createObjectStore('graph_relations', { keyPath: 'id' });
     };
 
     req.onsuccess  = () => { _db = req.result; resolve(_db); };
@@ -42,7 +56,7 @@ export function openDB(): Promise<IDBDatabase> {
 
 // ── 通用辅助 ──────────────────────────────────────────────────
 
-type StoreName = 'drafts' | 'memories' | 'books' | 'style_profiles';
+type StoreName = 'drafts' | 'memories' | 'books' | 'style_profiles' | 'plot_hooks' | 'character_capsules' | 'graph_entities' | 'graph_relations';
 
 export async function dbGetAll<T>(store: StoreName): Promise<T[]> {
   const db = await openDB();

@@ -99,3 +99,5 @@ export function SnapshotPanel({
     </div>
   );
 }
+
+export default SnapshotPanel;

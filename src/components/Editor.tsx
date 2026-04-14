@@ -2,9 +2,10 @@
 // components/Editor.tsx — 核心编辑器（Ghost 文字 + 审核层）
 // =============================================================
 
-import { useEffect, useRef, useState } from 'react';
+import { useEffect, useRef, useState, useMemo } from 'react';
 import type { AiInsertRange, BLOCK_COLORS_ARRAY } from '../hooks/useEditor';
 import type { WritingBlock } from '../types';
+import { BLOCK_COLORS, BLOCK_BORDER_COLORS } from '../config/constants';
 
 interface PendingPolish {
   text: string;
@@ -34,69 +35,48 @@ interface EditorProps {
   onSelectionChange: (range: { start: number; end: number } | null) => void;
 }
 
-// 与 useEditor.ts 中保持一致的颜色数组
-const BLOCK_COLORS: readonly string[] = [
-  'rgba(139,92,246,0.12)',
-  'rgba(59,130,246,0.12)',
-  'rgba(16,185,129,0.12)',
-  'rgba(245,158,11,0.12)',
-  'rgba(239,68,68,0.12)',
-  'rgba(6,182,212,0.12)',
-  'rgba(168,85,247,0.12)',
-  'rgba(234,179,8,0.12)',
-  'rgba(20,184,166,0.12)',
-  'rgba(249,115,22,0.12)',
-];
-
-// 块颜色的边框色（更深一档）
-const BLOCK_BORDER_COLORS: readonly string[] = [
-  'rgba(139,92,246,0.35)',
-  'rgba(59,130,246,0.35)',
-  'rgba(16,185,129,0.35)',
-  'rgba(245,158,11,0.35)',
-  'rgba(239,68,68,0.35)',
-  'rgba(6,182,212,0.35)',
-  'rgba(168,85,247,0.35)',
-  'rgba(234,179,8,0.35)',
-  'rgba(20,184,166,0.35)',
-  'rgba(249,115,22,0.35)',
-];
-
-// 将写作块转换为带颜色的 span 序列
+/**
+ * 区间算法：直接按块生成 span，无需逐字符映射。
+ * 时间复杂度 O(blocks) 而非 O(content.length)。
+ */
 function renderBlockLayer(content: string, blocks: WritingBlock[]): React.ReactNode {
   if (!blocks.length) return null;
-  // 合并重叠块 → 逐字符确定颜色
-  const colorMap = new Array<number | null>(content.length).fill(null);
-  for (const blk of blocks) {
+
+  // 按 start 排序，处理间隙
+  const sorted = [...blocks].sort((a, b) => a.start - b.start);
+  const spans: React.ReactNode[] = [];
+  let cursor = 0;
+
+  for (const blk of sorted) {
+    const start = Math.max(blk.start, cursor);
     const end = Math.min(blk.end, content.length);
-    for (let i = blk.start; i < end; i++) colorMap[i] = blk.colorIndex;
+    if (start >= end) continue;
+
+    // 间隙（无色区域）
+    if (cursor < start) {
+      spans.push(<span key={`gap-${cursor}`} style={{ color: 'transparent' }}>{content.slice(cursor, start)}</span>);
+    }
+
+    // 有色块
+    spans.push(
+      <span
+        key={`blk-${blk.id}`}
+        style={{
+          background: BLOCK_COLORS[blk.colorIndex % BLOCK_COLORS.length],
+          borderBottom: `1px solid ${BLOCK_BORDER_COLORS[blk.colorIndex % BLOCK_BORDER_COLORS.length]}`,
+        }}
+      >
+        {content.slice(start, end)}
+      </span>
+    );
+    cursor = end;
   }
 
-  // 生成 span 序列（连续同色合并）
-  const spans: React.ReactNode[] = [];
-  let i = 0;
-  while (i < content.length) {
-    const ci = colorMap[i];
-    let j = i + 1;
-    while (j < content.length && colorMap[j] === ci) j++;
-    const seg = content.slice(i, j);
-    if (ci !== null) {
-      spans.push(
-        <span
-          key={i}
-          style={{
-            background: BLOCK_COLORS[ci % BLOCK_COLORS.length],
-            borderBottom: `1px solid ${BLOCK_BORDER_COLORS[ci % BLOCK_BORDER_COLORS.length]}`,
-          }}
-        >
-          {seg}
-        </span>
-      );
-    } else {
-      spans.push(<span key={i} style={{ color: 'transparent' }}>{seg}</span>);
-    }
-    i = j;
+  // 尾部间隙
+  if (cursor < content.length) {
+    spans.push(<span key={`gap-${cursor}`} style={{ color: 'transparent' }}>{content.slice(cursor)}</span>);
   }
+
   return <>{spans}</>;
 }
 
@@ -132,6 +112,12 @@ export function Editor({
 
   // 当前光标所在行（高亮用）
   const [activeLine, setActiveLine] = useState(0);
+
+  // useMemo：仅 content 或 writingBlocks 变化时重新计算块颜色层
+  const blockLayerNode = useMemo(
+    () => writingBlocks.length > 0 ? renderBlockLayer(content, writingBlocks) : null,
+    [content, writingBlocks],
+  );
 
   // 流式输出时自动滚到底（textarea + ghost overlay 同步）
   useEffect(() => {
@@ -337,7 +323,7 @@ export function Editor({
           aria-hidden
           style={{ pointerEvents: 'none', whiteSpace: 'pre-wrap', wordBreak: 'break-word' }}
         >
-          {writingBlocks.length > 0 ? renderBlockLayer(content, writingBlocks) : null}
+          {blockLayerNode}
         </div>
 
         {/* AI 接受后高亮 */}

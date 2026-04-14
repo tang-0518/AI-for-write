@@ -21,6 +21,7 @@ export function CreateBookModal({ onConfirm, onConfirmImport, onCancel, isFirst 
   // ── 手动创建状态 ───────────────────────────────────────────
   const [title, setTitle]       = useState('');
   const [synopsis, setSynopsis] = useState('');
+  const [titleError, setTitleError] = useState(false);
   const inputRef = useRef<HTMLInputElement>(null);
 
   useEffect(() => {
@@ -29,7 +30,13 @@ export function CreateBookModal({ onConfirm, onConfirmImport, onCancel, isFirst 
 
   const handleSubmit = () => {
     const t = title.trim();
-    if (!t) { inputRef.current?.focus(); return; }
+    if (!t) {
+      setTitleError(true);
+      inputRef.current?.focus();
+      // 抖动结束后重置，允许再次触发动画
+      setTimeout(() => setTitleError(false), 600);
+      return;
+    }
     onConfirm(t, synopsis.trim());
   };
 
@@ -155,13 +162,18 @@ export function CreateBookModal({ onConfirm, onConfirmImport, onCancel, isFirst 
                   <input
                     ref={inputRef}
                     type="text"
-                    className="form-input"
+                    className={`form-input${titleError ? ' form-input-error form-input-shake' : ''}`}
                     value={title}
-                    onChange={e => setTitle(e.target.value)}
+                    onChange={e => { setTitle(e.target.value); if (titleError) setTitleError(false); }}
                     onKeyDown={e => { if (e.key === 'Enter') handleSubmit(); }}
                     placeholder="请输入书名…"
                     maxLength={60}
                   />
+                  {titleError && (
+                    <span style={{ color: 'var(--error)', fontSize: 12, marginTop: 4, display: 'block' }}>
+                      书名不能为空
+                    </span>
+                  )}
                 </div>
 
                 <div className="settings-row" style={{ marginTop: '16px' }}>
@@ -327,3 +339,5 @@ export function CreateBookModal({ onConfirm, onConfirmImport, onCancel, isFirst 
     </>
   );
 }
+
+export default CreateBookModal;

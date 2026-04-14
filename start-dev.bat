@@ -1,12 +1,13 @@
 @echo off
 chcp 65001 >nul
-title 小说辅助创作-dev - 开发模式 (端口 5174)
+title 小说辅助创作 — 启动中...
 
-cd /d "%~dp0"
+:: 用 PowerShell 执行启动脚本（绕过执行策略限制）
+powershell.exe -ExecutionPolicy Bypass -NoProfile -File "%~dp0dev-start.ps1"
 
-echo 正在启动开发服务器 (http://localhost:5174)...
-
-:: 后台等待服务器就绪后打开浏览器
-start "" cmd /c "timeout /t 3 /nobreak >nul && start http://localhost:5174"
-
-npm run dev -- --port 5174
+:: 如果 PS1 意外退出，暂停显示错误
+if %errorlevel% neq 0 (
+    echo.
+    echo  启动脚本异常退出，错误代码：%errorlevel%
+    pause
+)

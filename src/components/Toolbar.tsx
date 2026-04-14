@@ -3,7 +3,6 @@
 // =============================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
-import { STYLE_CONFIGS, type WritingStyle } from '../types';
 import type { Draft } from '../hooks/useBooks';
 import type { Theme } from '../hooks/useTheme';
 
@@ -13,22 +12,12 @@ interface ToolbarProps {
   content: string;
   allDrafts: Draft[];
   canUndo: boolean;
-  currentStyle: WritingStyle;
-  showInstruction: boolean;
-  hasInstruction: boolean;
-  memoryCount: number;
   currentTheme?: string;
   themes?: Theme[];
-  onShowMemory: () => void;
-  onShowStyleLearning?: () => void;
   onClear: () => void;
   onUndo: () => void;
   onOpenSettings: () => void;
-  onStyleChange: (style: WritingStyle) => void;
-  onToggleInstruction: () => void;
   onThemeChange?: (id: string) => void;
-  imitationMode?: boolean;
-  modularWriting?: boolean;
 }
 
 export function Toolbar({
@@ -37,37 +26,24 @@ export function Toolbar({
   content,
   allDrafts,
   canUndo,
-  currentStyle,
-  showInstruction,
-  hasInstruction,
-  memoryCount,
   currentTheme,
   themes,
-  onShowMemory,
-  onShowStyleLearning,
   onClear,
   onUndo,
   onOpenSettings,
-  onStyleChange,
-  onToggleInstruction,
   onThemeChange,
-  imitationMode = false,
-  modularWriting = false,
 }: ToolbarProps) {
   const [copied, setCopied] = useState(false);
-  const [styleOpen, setStyleOpen] = useState(false);
   const [exportOpen, setExportOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
 
   const exportRef = useRef<HTMLDivElement>(null);
-  const styleRef  = useRef<HTMLDivElement>(null);
   const themeRef  = useRef<HTMLDivElement>(null);
 
   // 点击外部关闭下拉
   useEffect(() => {
     const handler = (e: MouseEvent) => {
       if (exportRef.current && !exportRef.current.contains(e.target as Node)) setExportOpen(false);
-      if (styleRef.current  && !styleRef.current.contains(e.target as Node))  setStyleOpen(false);
       if (themeRef.current  && !themeRef.current.contains(e.target as Node))  setThemeOpen(false);
     };
     document.addEventListener('mousedown', handler);
@@ -134,8 +110,6 @@ export function Toolbar({
     setExportOpen(false);
   }, [allDrafts]);
 
-  const styleConfig = STYLE_CONFIGS[currentStyle];
-
   return (
     <header className="toolbar">
       {/* 品牌 */}
@@ -145,73 +119,6 @@ export function Toolbar({
       </div>
 
       <div className="toolbar-actions">
-        {/* 风格切换 */}
-        <div className="style-switcher" ref={styleRef}>
-          <button
-            className="btn btn-ghost style-switcher-btn"
-            onClick={() => setStyleOpen(v => !v)}
-            title="切换写作风格"
-          >
-            <span>{styleConfig.emoji}</span>
-            <span className="btn-ghost-label">{styleConfig.label}</span>
-            <span className="style-switcher-arrow">{styleOpen ? '▲' : '▼'}</span>
-          </button>
-          {styleOpen && (
-            <div className="style-dropdown">
-              {(Object.entries(STYLE_CONFIGS) as [WritingStyle, typeof STYLE_CONFIGS[WritingStyle]][]).map(
-                ([key, cfg]) => (
-                  <button
-                    key={key}
-                    className={`style-dropdown-item ${currentStyle === key ? 'style-dropdown-active' : ''}`}
-                    onClick={() => { onStyleChange(key); setStyleOpen(false); }}
-                  >
-                    <span>{cfg.emoji}</span>
-                    <span>{cfg.label}</span>
-                  </button>
-                )
-              )}
-            </div>
-          )}
-        </div>
-
-        <div className="toolbar-divider" />
-
-        {/* 记忆库 */}
-        <button
-          className="btn btn-ghost"
-          onClick={onShowMemory}
-          title="记忆库：存储人物、情节、写作风格等长期上下文"
-        >
-          <span>◈</span>
-          <span className="btn-ghost-label">记忆{memoryCount > 0 ? ` ${memoryCount}` : ''}</span>
-        </button>
-
-        {/* 文风学习 */}
-        {onShowStyleLearning && (
-          <button
-            className="btn btn-ghost"
-            onClick={onShowStyleLearning}
-            title="文风学习：分析导入小说的写作风格，开启模仿续写"
-            style={imitationMode ? { color: 'var(--purple-400)', fontWeight: 600 } : undefined}
-          >
-            <span>🎨</span>
-            <span className="btn-ghost-label">
-              {imitationMode ? '仿写●' : '文风'}
-              {modularWriting && !imitationMode ? '◈' : ''}
-            </span>
-          </button>
-        )}
-
-        {/* 全局指令 */}
-        <button
-          className={`btn btn-ghost ${showInstruction ? 'instruction-toggle-active' : ''} ${hasInstruction && !showInstruction ? 'instruction-toggle-has' : ''}`}
-          onClick={onToggleInstruction}
-          title="长期写作风格指令"
-        >
-          <span>💡</span>
-          <span className="btn-ghost-label">指令{hasInstruction ? ' ●' : ''}</span>
-        </button>
-
         <div className="toolbar-divider" />
 
         {/* 复制 */}

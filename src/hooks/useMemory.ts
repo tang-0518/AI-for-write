@@ -1,5 +1,33 @@
 // =============================================================
-// hooks/useMemory.ts — 记忆系统 React Hook（IndexedDB 持久化）
+// hooks/useMemory.ts — 记忆宫殿 React Hook
+//
+// 【职责】
+//   管理"记忆宫殿"的状态和手动 CRUD。
+//   业务逻辑（去重 upsert、章节摘要存储）已移入 memory/storage.ts。
+//
+// 【三层记忆架构】
+//
+//   Layer 0  工作记忆（contextCompression.ts）— 不在此管理
+//   Layer 1  章节摘要  chapter_summary        — 完成章节时由 completeChapter() 写入
+//   Layer 2  书级实体  character / world_rule  — 自动提取 + 手动修正
+//            用户笔记  note                    — 纯手动
+//
+// 【数据流向】
+//
+//   自动提取（低频）：
+//     acceptContinuation → extractEntitiesFromAccepted() → upsertExtractedItems() → refresh()
+//
+//   完成章节：
+//     ChapterCompleteModal → completeChapter() → storage 直接写 → refresh()
+//
+//   手动操作：
+//     MemoryPanel → useMemory.add/update/remove()
+//
+//   注入 Prompt：
+//     useEditor → resolveMemoryContext() → buildRelevantMemoryContext()
+//
+// 【被哪些文件使用】
+//   App.tsx — 实例化，将返回值传给 useEditor 和 MemoryPanel
 // =============================================================
 
 import { useState, useCallback, useEffect, useMemo, useRef } from 'react';
@@ -7,50 +35,93 @@ import {
   loadMemoriesAsync,
   upsertMemoryAsync,
   deleteMemoryAsync,
-  buildMemoryContext,
+  upsertExtractedItems,
+  buildMemoryContextForBook,
   buildRelevantMemoryContext,
 } from '../memory/storage';
-import type { MemoryEntry, MemoryType, TruthFileType } from '../memory/types';
-import { TRUTH_FILE_META } from '../memory/types';
+import type { MemoryEntry, MemoryType } from '../memory/types';
 import { clearGenerationCache } from '../api/cache';
+import type { ExtractedMemoryItem } from '../api/gemini';
+import { buildContextBundle, buildContextBundleLocal } from '../api/memoryService';
+import type { ContextBundle } from '../api/memoryService';
 
-export function useMemory(activeBookId?: string) {
+export function useMemory(activeBookId?: string, _novelTitle?: string) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
 
-  // ref 用于 saveTruthFiles 避免因 entries 变化重建函数引发子组件重渲染
   const entriesRef = useRef(entries);
   entriesRef.current = entries;
 
-  // 初始化：从 IndexedDB 加载
+  // ── 从 IndexedDB 全量加载 ─────────────────────────────────
   useEffect(() => {
     loadMemoriesAsync()
       .then(data => { setEntries(data); setLoaded(true); })
       .catch(() => setLoaded(true));
   }, []);
 
+  // ── 外部写入后刷新（ChapterCompleteModal 完成后调用）────────
+  const refresh = useCallback(async () => {
+    const data = await loadMemoriesAsync();
+    setEntries(data);
+    clearGenerationCache();
+  }, []);
+
+  // ── 按当前书目过滤 ────────────────────────────────────────
+  const bookEntries = useMemo(
+    () => entries.filter(e => !e.bookId || e.bookId === activeBookId),
+    [entries, activeBookId],
+  );
+
+  const characters = useMemo(
+    () => bookEntries.filter(e => e.type === 'character'),
+    [bookEntries],
+  );
+
+  const worldRules = useMemo(
+    () => bookEntries.filter(e => e.type === 'world_rule'),
+    [bookEntries],
+  );
+
+  const chapterSummaries = useMemo(
+    () => bookEntries
+      .filter(e => e.type === 'chapter_summary')
+      .sort((a, b) => (b.chapterOrder ?? b.updatedAt) - (a.chapterOrder ?? a.updatedAt)),
+    [bookEntries],
+  );
+
+  const notes = useMemo(
+    () => bookEntries.filter(e => e.type === 'note'),
+    [bookEntries],
+  );
+
+  // ── 手动 CRUD ─────────────────────────────────────────────
+
   const add = useCallback(async (entry: {
     name: string;
-    description: string;
+    description?: string;
     type: MemoryType;
     content: string;
     bookId?: string;
-    truthFileType?: TruthFileType;
+    autoExtracted?: boolean;
+    chapterOrder?: number;
   }): Promise<MemoryEntry> => {
-    const saved = await upsertMemoryAsync(entry);
+    const saved = await upsertMemoryAsync({
+      description: '',
+      ...entry,
+      bookId: entry.bookId ?? activeBookId,
+    });
     setEntries(await loadMemoriesAsync());
     clearGenerationCache();
     return saved;
-  }, []);
+  }, [activeBookId]);
 
   const update = useCallback(async (id: string, patch: Partial<Omit<MemoryEntry, 'id' | 'updatedAt'>>) => {
-    // 读取时用 ref，避免竞态时用到陈旧的 entries state
     const current = entriesRef.current.find(e => e.id === id);
     if (!current) return;
     await upsertMemoryAsync({ ...current, ...patch, id });
     setEntries(await loadMemoriesAsync());
     clearGenerationCache();
-  }, []); // 不依赖 entries，通过 ref 访问
+  }, []);
 
   const remove = useCallback(async (id: string) => {
     await deleteMemoryAsync(id);
@@ -58,64 +129,60 @@ export function useMemory(activeBookId?: string) {
     clearGenerationCache();
   }, []);
 
-  // 用 useMemo 避免每次 render 重复 filter
-  const nonTruthEntries = useMemo(
-    () => entries.filter(e => !e.truthFileType),
-    [entries]
-  );
-
-  const truthFiles = useMemo(
-    () => entries.filter(
-      e => e.truthFileType && (!activeBookId || !e.bookId || e.bookId === activeBookId)
-    ),
-    [entries, activeBookId]
-  );
-
-  // saveTruthFiles 不依赖 entries（通过 ref），避免频繁重建引用
-  const saveTruthFiles = useCallback(async (
-    files: Array<{ type: TruthFileType; content: string }>
-  ) => {
-    const current = entriesRef.current;
-    for (const file of files) {
-      const existing = current.find(
-        e => e.truthFileType === file.type && (!activeBookId || !e.bookId || e.bookId === activeBookId)
-      );
-      const meta = TRUTH_FILE_META[file.type];
-      if (existing) {
-        await upsertMemoryAsync({ ...existing, content: file.content, id: existing.id });
-      } else {
-        await upsertMemoryAsync({
-          name: meta.name,
-          description: meta.description,
-          type: 'project',
-          content: file.content,
-          bookId: activeBookId,
-          truthFileType: file.type,
-        });
-      }
-    }
+  // ── 接受 AI 续写后的后台自动提取 ─────────────────────────
+  // 触发时机：用户接受续写片段（acceptContinuation）
+  const upsertExtracted = useCallback(async (items: ExtractedMemoryItem[]): Promise<void> => {
+    if (items.length === 0 || !activeBookId) return;
+    await upsertExtractedItems(items, activeBookId);
     setEntries(await loadMemoriesAsync());
     clearGenerationCache();
-  }, [activeBookId]); // 移除 entries 依赖，改用 ref
+  }, [activeBookId]);
+
+  // ── 构建 Prompt 上下文 ────────────────────────────────────
 
   const memoryContext = useMemo(
-    () => buildMemoryContext(nonTruthEntries),
-    [nonTruthEntries]
+    () => buildMemoryContextForBook(bookEntries, '', 1500),
+    [bookEntries],
   );
 
   const buildContextForQuery = useCallback((query: string, tokenBudget?: number) => {
-    return buildRelevantMemoryContext(entriesRef.current.filter(e => !e.truthFileType), query, tokenBudget).context;
-  }, []); // 通过 ref 访问，不需要依赖 entries
+    return buildRelevantMemoryContext(
+      entriesRef.current.filter(e => !e.bookId || e.bookId === activeBookId),
+      query,
+      tokenBudget,
+    ).context;
+  }, [activeBookId]);
+
+  const buildBundle = useCallback(
+    (query = '', tokenBudget?: number): Promise<ContextBundle> => {
+      const bookEntries = entriesRef.current.filter(e => !e.bookId || e.bookId === activeBookId);
+      if (activeBookId) {
+        return buildContextBundle(activeBookId, bookEntries, query, tokenBudget);
+      }
+      return Promise.resolve(buildContextBundleLocal(bookEntries, query, tokenBudget));
+    },
+    [activeBookId],
+  );
+
+  const bundleSnapshot = useMemo((): ContextBundle => {
+    return buildContextBundleLocal(bookEntries, '', undefined);
+  }, [bookEntries]);
 
   return {
-    entries: nonTruthEntries,
-    truthFiles,
+    entries: bookEntries,
+    characters,
+    worldRules,
+    chapterSummaries,
+    notes,
     loaded,
     add,
     update,
     remove,
-    saveTruthFiles,
+    refresh,
+    upsertExtracted,
     memoryContext,
     buildContextForQuery,
+    buildBundle,
+    bundleSnapshot,
   };
 }

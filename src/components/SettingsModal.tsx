@@ -2,9 +2,10 @@
 // components/SettingsModal.tsx — IDE 风格设置面板
 // =============================================================
 
-import { useState } from 'react';
+import { useState, useCallback } from 'react';
 import type { AppSettings, WritingStyle, WriteLength, CreativityLevel } from '../types';
 import { STYLE_CONFIGS, LENGTH_CONFIGS, EDITOR_FONT_OPTIONS, CREATIVITY_CONFIGS } from '../types';
+import { callGemini } from '../api/gemini';
 
 type Category = 'connection' | 'writing' | 'prompt' | 'preferences' | 'context' | 'appearance';
 
@@ -27,6 +28,25 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
   const [draft, setDraft] = useState<AppSettings>({ ...settings });
   const [category, setCategory] = useState<Category>('connection');
   const [showKey, setShowKey] = useState(false);
+  const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
+  const [testError, setTestError] = useState('');
+
+  const handleTestConnection = useCallback(async () => {
+    if (!draft.apiKey) {
+      setTestStatus('fail');
+      setTestError('请先填写 API Key');
+      return;
+    }
+    setTestStatus('testing');
+    setTestError('');
+    try {
+      await callGemini(draft.apiKey, draft.model, '请回复"ok"', { temperature: 0.1, maxOutputTokens: 10 });
+      setTestStatus('ok');
+    } catch (err) {
+      setTestStatus('fail');
+      setTestError(err instanceof Error ? err.message : '连接失败');
+    }
+  }, [draft.apiKey, draft.model]);
 
   const set = <K extends keyof AppSettings>(key: K, value: AppSettings[K]) =>
     setDraft(prev => ({ ...prev, [key]: value }));
@@ -98,24 +118,56 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
                   <div className="settings-row-label">
                     <span>模型</span>
                   </div>
-                  <div className="settings-row-desc">推荐使用 gemini-2.5-pro，支持长文本与高质量输出</div>
+                  <div className="settings-row-desc">
+                    gemini-2.5-flash：速度快、免费额度高，推荐新用户。<br />
+                    gemini-2.5-pro：质量更高，需要已付费账号或企业 Key。
+                  </div>
                   <input
                     type="text"
                     className="form-input"
                     value={draft.model}
-                    onChange={e => set('model', e.target.value)}
-                    placeholder="gemini-2.5-pro"
+                    onChange={e => { set('model', e.target.value); setTestStatus('idle'); }}
+                    placeholder="gemini-2.5-flash"
                   />
                   <div className="settings-model-presets">
-                    {['gemini-2.5-pro', 'gemini-2.0-flash', 'gemini-1.5-pro'].map(m => (
+                    {[
+                      { id: 'gemini-2.5-flash', tag: '推荐' },
+                      { id: 'gemini-2.5-pro',   tag: '付费' },
+                      { id: 'gemini-2.0-flash',  tag: '' },
+                      { id: 'gemini-1.5-pro',    tag: '' },
+                    ].map(({ id, tag }) => (
                       <button
-                        key={m}
-                        className={`settings-preset ${draft.model === m ? 'settings-preset-active' : ''}`}
-                        onClick={() => set('model', m)}
+                        key={id}
+                        className={`settings-preset ${draft.model === id ? 'settings-preset-active' : ''}`}
+                        onClick={() => { set('model', id); setTestStatus('idle'); }}
                       >
-                        {m}
+                        {id}{tag ? ` ·${tag}` : ''}
                       </button>
                     ))}
+                  </div>
+                </div>
+
+                <div className="settings-divider" />
+
+                <div className="settings-row">
+                  <div className="settings-row-label"><span>连接测试</span></div>
+                  <div className="settings-row-desc">验证 API Key 与模型是否可用（发送一条极短测试请求）</div>
+                  <div style={{ display: 'flex', alignItems: 'center', gap: '10px', flexWrap: 'wrap' }}>
+                    <button
+                      className="btn btn-ghost"
+                      style={{ fontSize: '13px' }}
+                      onClick={handleTestConnection}
+                      disabled={testStatus === 'testing'}
+                      type="button"
+                    >
+                      {testStatus === 'testing' ? '测试中…' : '测试连接'}
+                    </button>
+                    {testStatus === 'ok' && (
+                      <span style={{ color: 'var(--green-400)', fontSize: '13px' }}>✓ 连接成功</span>
+                    )}
+                    {testStatus === 'fail' && (
+                      <span style={{ color: '#f87171', fontSize: '13px' }}>✗ {testError}</span>
+                    )}
                   </div>
                 </div>
               </div>
@@ -451,3 +503,5 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
     </div>
   );
 }
+
+export default SettingsModal;

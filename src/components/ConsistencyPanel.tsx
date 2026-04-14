@@ -10,6 +10,7 @@ interface ConsistencyPanelProps {
   error: string | null;
   onCheck: () => void;
   onClose: () => void;
+  onGoComplete?: () => void;
 }
 
 const SEVERITY_META: Record<string, { label: string; color: string; bg: string }> = {
@@ -18,7 +19,7 @@ const SEVERITY_META: Record<string, { label: string; color: string; bg: string }
   low:    { label: '轻微', color: '#34d399', bg: 'rgba(52,211,153,0.08)' },
 };
 
-export function ConsistencyPanel({ issues, isChecking, error, onCheck, onClose }: ConsistencyPanelProps) {
+export function ConsistencyPanel({ issues, isChecking, error, onCheck, onClose, onGoComplete }: ConsistencyPanelProps) {
   return (
     <div className="modal-backdrop" onClick={e => { if (e.target === e.currentTarget) onClose(); }}>
       <div className="modal-panel consistency-panel">
@@ -86,6 +87,15 @@ export function ConsistencyPanel({ issues, isChecking, error, onCheck, onClose }
 
         <div className="modal-footer">
           <button className="btn btn-ghost" onClick={onClose}>关闭</button>
+          {onGoComplete && (
+            <button
+              className="btn btn-ghost"
+              onClick={() => { onClose(); onGoComplete(); }}
+              title="完成本章以生成真相文件，供一致性检查使用"
+            >
+              去完成章节 →
+            </button>
+          )}
           <button className="btn btn-primary" onClick={onCheck} disabled={isChecking}>
             {isChecking ? '检查中…' : '开始检查'}
           </button>
@@ -94,3 +104,5 @@ export function ConsistencyPanel({ issues, isChecking, error, onCheck, onClose }
     </div>
   );
 }
+
+export default ConsistencyPanel;

@@ -44,21 +44,22 @@ export function useAutoSave({
   // 内容变化时防抖保存；章节切换时立即刷写（避免切走丢失末尾修改）
   useEffect(() => {
     if (!settings.autoSave || !activeDraftId) return;
+    // 捕获当前 effect 对应的 draftId，cleanup 时使用此值而非 ref
+    const currentDraftId = activeDraftId;
     if (timerRef.current) clearTimeout(timerRef.current);
     timerRef.current = setTimeout(() => {
       timerRef.current = null;
-      updateContent(activeDraftId, content);
+      updateContent(currentDraftId, contentRef.current);
       setSavedAt(Date.now());
     }, 800);
     return () => {
       if (timerRef.current) {
         clearTimeout(timerRef.current);
         timerRef.current = null;
-        // 章节切换（activeDraftId 变化触发 cleanup）：立即保存最新内容
-        const latestId = activeDraftIdRef.current;
+        // 章节切换（activeDraftId 变化触发 cleanup）：立即保存到旧章节
         const latestContent = contentRef.current;
-        if (latestId && latestContent !== undefined) {
-          updateContent(latestId, latestContent);
+        if (currentDraftId && latestContent !== undefined) {
+          updateContent(currentDraftId, latestContent);
         }
       }
     };
@@ -67,8 +68,14 @@ export function useAutoSave({
 
   // beforeunload 只注册一次，通过 ref 访问最新数据
   const handleBeforeUnload = useCallback(() => {
-    // beforeunload 中异步操作可能被浏览器中断，先同步触发立即写入
-    flushAllRef.current(chaptersRef.current).catch(() => {});
+    // 将当前编辑器内容同步到 chapters 数组后再刷盘，避免丢失未保存的修改
+    const id = activeDraftIdRef.current;
+    const latestContent = contentRef.current;
+    const currentChapters = chaptersRef.current;
+    const synced = id
+      ? currentChapters.map(c => c.id === id ? { ...c, content: latestContent, updatedAt: Date.now() } : c)
+      : currentChapters;
+    flushAllRef.current(synced).catch(() => {});
   }, []); // 空依赖：通过 ref 获取最新值
 
   useEffect(() => {

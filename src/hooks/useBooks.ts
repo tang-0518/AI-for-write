@@ -16,6 +16,7 @@ export interface Draft {
   order: number;
   updatedAt: number;
   contextState: DraftContextState;
+  chapterSummary?: string;  // 章节完成时 AI 生成的 ~150 字摘要
 }
 
 // ── 工厂函数 ──────────────────────────────────────────────────
@@ -186,16 +187,26 @@ export function useBooks() {
     setBooksState(prev => {
       const next = prev.filter(b => b.id !== id);
       kvSet('book-order', next.map(b => b.id)).catch(() => {});
-      if (next.length > 0) setActiveBookId(next[0].id);
+      if (next.length > 0) {
+        setActiveBookId(next[0].id);
+        setChaptersState(chs => {
+          const bookChs = chs.filter(c => c.bookId === next[0].id).sort((a, b) => a.order - b.order);
+          setActiveDraftId(bookChs.length > 0 ? bookChs[0].id : '');
+          return chs;
+        });
+      } else {
+        setActiveBookIdState('');
+        setActiveDraftIdState('');
+      }
       return next;
     });
-  }, [setActiveBookId]);
+  }, [setActiveBookId, setActiveDraftId]);
 
   const switchBook = useCallback((bookId: string) => {
     setActiveBookId(bookId);
     setChaptersState(prev => {
       const bookChs = prev.filter(c => c.bookId === bookId).sort((a, b) => a.order - b.order);
-      if (bookChs.length > 0) setActiveDraftId(bookChs[0].id);
+      setActiveDraftId(bookChs.length > 0 ? bookChs[0].id : '');
       return prev;
     });
   }, [setActiveBookId, setActiveDraftId]);
@@ -224,9 +235,7 @@ export function useBooks() {
         const bookChs = next
           .filter(c => c.bookId === ch.bookId)
           .sort((a, b) => a.order - b.order);
-        if (bookChs.length > 0) {
-          setActiveDraftId(bookChs[0].id);
-        }
+        setActiveDraftId(bookChs.length > 0 ? bookChs[0].id : '');
       }
       return next;
     });
@@ -247,7 +256,7 @@ export function useBooks() {
       if (!ch) return prev;
       const updated = { ...ch, content, updatedAt: Date.now() };
       dbPut('drafts', updated).catch(() => {});
-      return prev;
+      return prev.map(c => c.id === id ? updated : c); // Bug fix: 同步更新 React 状态
     });
   }, []);
 
@@ -267,6 +276,15 @@ export function useBooks() {
     setChaptersState(prev => prev.map(c => {
       if (c.id !== id) return c;
       const updated = { ...c, contextState, updatedAt: Date.now() };
+      dbPut('drafts', updated).catch(() => {});
+      return updated;
+    }));
+  }, []);
+
+  const updateChapterSummary = useCallback((id: string, chapterSummary: string) => {
+    setChaptersState(prev => prev.map(c => {
+      if (c.id !== id) return c;
+      const updated = { ...c, chapterSummary, updatedAt: Date.now() };
       dbPut('drafts', updated).catch(() => {});
       return updated;
     }));
@@ -360,6 +378,7 @@ export function useBooks() {
     updateChapterTitle,
     updateContent,
     updateContextState,
+    updateChapterSummary,
     reorderChapters,
     flushAll,
   };

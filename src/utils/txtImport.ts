@@ -187,7 +187,7 @@ export async function parseTxtBuffer(
 export function extractTitleFromFilename(filename: string): string {
   return filename
     .replace(/\.(txt|TXT)$/, '')
-    .replace(/[\[\(（【].*?[\]\)）】]/g, '')
+    .replace(/[[\(（【].*?[\])）】]/g, '')
     .trim()
     .slice(0, 60) || '未命名小说';
 }

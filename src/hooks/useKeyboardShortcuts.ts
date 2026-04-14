@@ -12,6 +12,8 @@ interface UseKeyboardShortcutsOptions {
   onFontIncrease: () => void;
   onFontDecrease: () => void;
   onHelp?: () => void;
+  onEscape?: () => void;
+  onSave?: () => void;
 }
 
 export function useKeyboardShortcuts(opts: UseKeyboardShortcutsOptions) {
@@ -21,20 +23,29 @@ export function useKeyboardShortcuts(opts: UseKeyboardShortcutsOptions) {
   useEffect(() => {
     const handler = (e: KeyboardEvent) => {
       const ctrl = e.ctrlKey || e.metaKey;
+      const { onFind, onReplace, onCrossSearch, onFontIncrease, onFontDecrease, onHelp, onEscape, onSave } = ref.current;
+
+      // ESC：关闭当前打开的面板（不需要 Ctrl）
+      if (e.key === 'Escape') {
+        onEscape?.();
+        return;
+      }
+
+      // ? 键（不需要 Ctrl）触发帮助
+      if (!ctrl && e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
+        e.preventDefault();
+        onHelp?.();
+        return;
+      }
+
       if (!ctrl) return;
-      const { onFind, onReplace, onCrossSearch, onFontIncrease, onFontDecrease, onHelp } = ref.current;
 
       if (e.key === 'f' && !e.shiftKey) { e.preventDefault(); onFind(); }
       if (e.key === 'h' && !e.shiftKey) { e.preventDefault(); onReplace(); }
       if ((e.key === 'F' || e.key === 'f') && e.shiftKey) { e.preventDefault(); onCrossSearch(); }
       if (e.key === '=' || e.key === '+') { e.preventDefault(); onFontIncrease(); }
       if (e.key === '-') { e.preventDefault(); onFontDecrease(); }
-
-      // ? 键（不需要 Ctrl）触发帮助
-      if (!ctrl && e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        onHelp?.();
-      }
+      if (e.key === 's' && !e.shiftKey) { e.preventDefault(); onSave?.(); }
     };
 
     window.addEventListener('keydown', handler);

@@ -381,3 +381,5 @@ export function StyleLearningPanel({
     </div>
   );
 }
+
+export default StyleLearningPanel;
