@@ -7778,3 +7778,41 @@ kbd {
 .inline-ai-rewrite-opt:hover {
   background: var(--bg-secondary, #26263a);
 }
+
+/* ── 自动驾驶面板 ─────────────────────────────────────────── */
+.ap-panel { padding: 12px; display: flex; flex-direction: column; gap: 10px; }
+.ap-empty { padding: 16px; color: var(--text-secondary, #888); font-size: 13px; text-align: center; }
+.ap-header { display: flex; align-items: center; justify-content: space-between; }
+.ap-title { font-size: 13px; font-weight: 600; color: var(--text-primary, #e0e0e0); }
+.ap-badge { font-size: 11px; padding: 2px 8px; border-radius: 10px; font-weight: 500; }
+.ap-badge--running  { background: #1a4d2e; color: #4ade80; }
+.ap-badge--stopped  { background: #2a2a3a; color: #888; }
+.ap-badge--review   { background: #3a2a00; color: #fbbf24; }
+.ap-badge--error    { background: #3a1a1a; color: #f87171; }
+.ap-badge--done     { background: #1a2a4d; color: #60a5fa; }
+
+.ap-progress-section { display: flex; flex-direction: column; gap: 5px; }
+.ap-progress-label { display: flex; justify-content: space-between; font-size: 12px; color: var(--text-secondary, #888); }
+.ap-progress-bar { height: 4px; background: var(--bg-secondary, #2a2a3a); border-radius: 2px; overflow: hidden; }
+.ap-progress-fill { height: 100%; background: #4ade80; border-radius: 2px; transition: width 0.6s ease; }
+.ap-stats { display: flex; justify-content: space-between; font-size: 11px; color: var(--text-tertiary, #666); }
+.ap-error-count { color: #f87171; }
+.ap-drift-alert { font-size: 11px; color: #fbbf24; background: #3a2a00; padding: 3px 8px; border-radius: 4px; }
+
+.ap-review-banner { font-size: 12px; color: #fbbf24; background: #3a2a00; padding: 8px 10px; border-radius: 6px; line-height: 1.5; }
+
+.ap-controls { display: flex; flex-direction: column; gap: 6px; }
+.ap-config-row { display: flex; align-items: center; gap: 6px; }
+.ap-config-label { font-size: 12px; color: var(--text-secondary, #888); white-space: nowrap; }
+.ap-config-input { width: 60px; padding: 3px 6px; border-radius: 4px; border: 1px solid var(--border, #333); background: var(--bg-secondary, #1e1e2e); color: var(--text-primary, #e0e0e0); font-size: 12px; }
+.ap-config-unit { font-size: 12px; color: var(--text-secondary, #888); }
+
+.ap-btn { padding: 7px 12px; border-radius: 6px; border: none; cursor: pointer; font-size: 13px; font-weight: 500; transition: opacity 0.15s; }
+.ap-btn:disabled { opacity: 0.5; cursor: not-allowed; }
+.ap-btn--primary { background: #4ade80; color: #111; }
+.ap-btn--primary:hover:not(:disabled) { opacity: 0.85; }
+.ap-btn--danger  { background: #f87171; color: #111; }
+.ap-btn--danger:hover:not(:disabled)  { opacity: 0.85; }
+
+.ap-error   { font-size: 12px; color: #f87171; padding: 6px 8px; background: #3a1a1a; border-radius: 4px; }
+.ap-offline { font-size: 12px; color: #888; padding: 8px; background: var(--bg-secondary, #1e1e2e); border-radius: 4px; text-align: center; }

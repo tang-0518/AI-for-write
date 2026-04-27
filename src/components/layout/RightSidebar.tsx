@@ -1,19 +1,24 @@
 import { lazy, Suspense, useEffect, useState } from 'react';
 import * as Tabs from '@radix-ui/react-tabs';
-import { Layers, Network, Sparkles } from 'lucide-react';
+import { Layers, Network, Sparkles, Zap } from 'lucide-react';
 import { MiniGraph } from '../MiniGraph';
 import { useNovelStore, type NovelRightTab } from '../../store/useNovelStore';
+import { AutopilotPanel } from '../AutopilotPanel';
 
 const BeatsPanel = lazy(() => import('../BeatsPanel').then(m => ({ default: m.BeatsPanel })));
 const ForeshadowingPanel = lazy(() => import('../ForeshadowingPanel').then(m => ({ default: m.ForeshadowingPanel })));
 
 const RIGHT_TABS: Array<{ value: NovelRightTab; label: string; Icon: typeof Sparkles }> = [
-  { value: 'ai',    label: 'AI',    Icon: Sparkles },
-  { value: 'plot',  label: 'Plot',  Icon: Layers },
-  { value: 'graph', label: 'Graph', Icon: Network },
+  { value: 'ai',        label: 'AI',    Icon: Sparkles },
+  { value: 'plot',      label: 'Plot',  Icon: Layers },
+  { value: 'graph',     label: 'Graph', Icon: Network },
+  { value: 'autopilot', label: '自动驾驶', Icon: Zap },
 ];
 
+import type { Book } from '../../types';
+
 interface RightSidebarProps {
+  book?: Book | null;
   bookId?: string | null;
   onGraphNodeClick?: (name: string, type: string) => void;
   onToggleInstruction?: () => void;
@@ -215,6 +220,10 @@ export function RightSidebar(props: RightSidebarProps) {
             highlightName={highlightedEntityName}
             onGraphNodeClick={props.onGraphNodeClick}
           />
+        </Tabs.Content>
+
+        <Tabs.Content className="right-sidebar-panel" value="autopilot">
+          <AutopilotPanel book={props.book ?? null} />
         </Tabs.Content>
       </Tabs.Root>
     </div>

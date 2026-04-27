@@ -597,6 +597,7 @@ function App() {
 
         {/* ── 右侧工具侧边栏 ──────────────────────────────── */}
         <RightSidebar
+          book={activeBook ?? null}
           bookId={activeBookId ?? null}
           onGraphNodeClick={(name, type) => {
             if (type === 'character') {

@@ -7,7 +7,7 @@ interface InlineMenuState {
   selectedText: string;
 }
 
-export type NovelRightTab = 'ai' | 'plot' | 'graph';
+export type NovelRightTab = 'ai' | 'plot' | 'graph' | 'autopilot';
 export type NovelTheme = 'dark' | 'light' | 'parchment';
 
 interface NovelStore {
