@@ -2,6 +2,7 @@ import { useCallback, useState } from 'react';
 import { magnifyOutlineToBeats } from '../beats/beatEngine';
 import type { Beat, BeatFocus } from '../beats/types';
 import { generateId } from '../utils/id';
+import { generateBeatSheetFromBackend } from '../api/beats';
 
 export function useBeats() {
   const [beats, setBeats] = useState<Beat[]>([]);
@@ -62,6 +63,17 @@ export function useBeats() {
     setActiveBeatIdx(0);
   }, []);
 
+  const generateBeatsFromBackend = useCallback(async (
+    chapterId: string,
+    outline: string,
+  ): Promise<boolean> => {
+    const backendBeats = await generateBeatSheetFromBackend(chapterId, outline);
+    if (!backendBeats || backendBeats.length === 0) return false;
+    setBeats(backendBeats);
+    setActiveBeatIdx(0);
+    return true;
+  }, []);
+
   const activeBeat = beats[activeBeatIdx] ?? null;
   const allDone = beats.length > 0 && beats.every(b => b.status === 'done');
   const progress = beats.length > 0 ? beats.filter(b => b.status === 'done').length / beats.length : 0;
@@ -73,6 +85,7 @@ export function useBeats() {
     allDone,
     progress,
     generateBeats,
+    generateBeatsFromBackend,
     addBeat,
     removeBeat,
     reorderBeats,

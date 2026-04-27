@@ -16,7 +16,7 @@
 | Step 4 | 自动驾驶面板：`src/api/autopilot.ts` + `AutopilotPanel.tsx` | ✅ 已完成 2026-04-27 |
 | Step 5 | 文风分析接入后端 `/api/v1/novels/{id}/voice/`：`src/api/voice.ts` + useStyleLearning 同步 | ✅ 已完成 2026-04-27 |
 | Step 6 | 伏笔台账接入后端 `/api/v1/novels/{id}/foreshadow-ledger/`：`src/api/foreshadow.ts` + resolve 时同步 | ✅ 已完成 2026-04-27 |
-| Step 7 | 节拍表接入后端 `/api/v1/beat-sheets/` | ⬜ 待做 |
+| Step 7 | 节拍表接入后端 `/api/v1/beat-sheets/`：`src/api/beats.ts` + useBeats.generateBeatsFromBackend | ✅ 已完成 2026-04-27 |
 | Step 8 | 章节审查面板 `AuditPanel.tsx` + `/api/v1/chapter-reviews/` | ⬜ 待做 |
 | Step 9 | 人物/地点接入后端 `/api/v1/bible/` | ⬜ 待做 |
 | Step 10 | 知识图谱接入后端 `/api/v1/knowledge/` | ⬜ 待做 |
