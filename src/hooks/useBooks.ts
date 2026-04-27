@@ -7,6 +7,13 @@ import { UNLOAD_BACKUP_STORAGE_KEY } from '../config/constants';
 import { DEFAULT_DRAFT_CONTEXT_STATE } from '../types';
 import type { Book, DraftContextState } from '../types';
 import { dbGetAll, dbPut, dbDelete, dbReplaceAll, kvGet, kvSet } from '../db/index';
+import {
+  syncCreateNovel,
+  syncUpdateNovel,
+  syncDeleteNovel,
+  syncEnsureChapter,
+  syncSaveChapter,
+} from '../api/novels';
 
 // Draft = 章节
 export interface Draft {
@@ -262,6 +269,11 @@ export function useBooks() {
     await dbPut('drafts', ch);
     setChaptersState(prev => [...prev, ch]);
     setActiveDraftId(ch.id);
+
+    // 后端双写（fire-and-forget）
+    syncCreateNovel(book).catch(() => {});
+    syncEnsureChapter(ch).catch(() => {});
+
     return book;
   }, [setActiveBookId, setActiveDraftId]);
 
@@ -271,6 +283,8 @@ export function useBooks() {
         if (b.id !== id) return b;
         const updated = { ...b, ...patch, updatedAt: Date.now() };
         dbPut('books', updated).catch(() => {});
+        // 后端双写（fire-and-forget）
+        syncUpdateNovel(updated).catch(() => {});
         return updated;
       });
       return next;
@@ -279,6 +293,8 @@ export function useBooks() {
 
   const deleteBook = useCallback(async (id: string) => {
     await dbDelete('books', id);
+    // 后端双写（fire-and-forget）
+    syncDeleteNovel(id).catch(() => {});
     // 删除该书所有章节
     setChaptersState(prev => {
       const toDelete = prev.filter(c => c.bookId === id);
@@ -325,6 +341,8 @@ export function useBooks() {
     await dbPut('drafts', ch);
     setChaptersState(prev => [...prev, ch]);
     setActiveDraftId(ch.id);
+    // 后端双写（fire-and-forget）
+    syncEnsureChapter(ch).catch(() => {});
     return ch.id;
   }, [chapters, setActiveDraftId]);
 
@@ -372,7 +390,9 @@ export function useBooks() {
       if (!ch) return prev;
       const updated = { ...ch, content, updatedAt: Date.now() };
       dbPut('drafts', updated).catch(() => {});
-      return prev.map(c => c.id === id ? updated : c); // Bug fix: 同步更新 React 状态
+      // 后端双写（fire-and-forget，debounce 已在调用侧处理）
+      syncSaveChapter(updated).catch(() => {});
+      return prev.map(c => c.id === id ? updated : c);
     });
   }, []);
 
