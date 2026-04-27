@@ -26,18 +26,44 @@ export function useOutline(bookId: string) {
 
   // 加载卡片
   useEffect(() => {
-    if (!bookId) { setCards([]); return; }
-    kvGet<OutlineCard[]>(`outline-${bookId}`)
-      .then(data => { if (data) setCards(data); else setCards([]); })
-      .catch(() => setCards([]));
+    let cancelled = false;
+    const loadCards = async () => {
+      if (!bookId) {
+        if (!cancelled) setCards([]);
+        return;
+      }
+      try {
+        const data = await kvGet<OutlineCard[]>(`outline-${bookId}`);
+        if (!cancelled) setCards(data ?? []);
+      } catch {
+        if (!cancelled) setCards([]);
+      }
+    };
+    void loadCards();
+    return () => {
+      cancelled = true;
+    };
   }, [bookId]);
 
   // 加载画布节点位置
   useEffect(() => {
-    if (!bookId) { setCanvasPositions([]); return; }
-    kvGet<CanvasNodePosition[]>(`canvas-positions-${bookId}`)
-      .then(data => { if (data) setCanvasPositions(data); else setCanvasPositions([]); })
-      .catch(() => setCanvasPositions([]));
+    let cancelled = false;
+    const loadCanvasPositions = async () => {
+      if (!bookId) {
+        if (!cancelled) setCanvasPositions([]);
+        return;
+      }
+      try {
+        const data = await kvGet<CanvasNodePosition[]>(`canvas-positions-${bookId}`);
+        if (!cancelled) setCanvasPositions(data ?? []);
+      } catch {
+        if (!cancelled) setCanvasPositions([]);
+      }
+    };
+    void loadCanvasPositions();
+    return () => {
+      cancelled = true;
+    };
   }, [bookId]);
 
   const persist = useCallback((next: OutlineCard[]) => {

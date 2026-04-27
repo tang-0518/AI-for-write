@@ -36,8 +36,6 @@ import {
   upsertMemoryAsync,
   deleteMemoryAsync,
   upsertExtractedItems,
-  buildMemoryContextForBook,
-  buildRelevantMemoryContext,
 } from '../memory/storage';
 import type { MemoryEntry, MemoryType } from '../memory/types';
 import { clearGenerationCache } from '../api/cache';
@@ -45,12 +43,13 @@ import type { ExtractedMemoryItem } from '../api/gemini';
 import { buildContextBundle, buildContextBundleLocal } from '../api/memoryService';
 import type { ContextBundle } from '../api/memoryService';
 
-export function useMemory(activeBookId?: string, _novelTitle?: string) {
+export function useMemory(activeBookId?: string) {
   const [entries, setEntries] = useState<MemoryEntry[]>([]);
   const [loaded, setLoaded] = useState(false);
+  const [bundleSnapshot, setBundleSnapshot] = useState<ContextBundle | null>(null);
 
-  const entriesRef = useRef(entries);
-  entriesRef.current = entries;
+  const bundleRequestSeqRef = useRef(0);
+  const lastBundleArgsRef = useRef<{ query: string; tokenBudget?: number }>({ query: '', tokenBudget: undefined });
 
   // ── 从 IndexedDB 全量加载 ─────────────────────────────────
   useEffect(() => {
@@ -116,12 +115,12 @@ export function useMemory(activeBookId?: string, _novelTitle?: string) {
   }, [activeBookId]);
 
   const update = useCallback(async (id: string, patch: Partial<Omit<MemoryEntry, 'id' | 'updatedAt'>>) => {
-    const current = entriesRef.current.find(e => e.id === id);
+    const current = entries.find(e => e.id === id);
     if (!current) return;
     await upsertMemoryAsync({ ...current, ...patch, id });
     setEntries(await loadMemoriesAsync());
     clearGenerationCache();
-  }, []);
+  }, [entries]);
 
   const remove = useCallback(async (id: string) => {
     await deleteMemoryAsync(id);
@@ -140,33 +139,61 @@ export function useMemory(activeBookId?: string, _novelTitle?: string) {
 
   // ── 构建 Prompt 上下文 ────────────────────────────────────
 
-  const memoryContext = useMemo(
-    () => buildMemoryContextForBook(bookEntries, '', 1500),
-    [bookEntries],
+  const buildBundleCore = useCallback(
+    (query = '', tokenBudget?: number): Promise<ContextBundle> => {
+      const currentBookEntries = entries.filter(e => !e.bookId || e.bookId === activeBookId);
+      if (activeBookId) {
+        return buildContextBundle(activeBookId, currentBookEntries, query, tokenBudget);
+      }
+      return Promise.resolve(buildContextBundleLocal(currentBookEntries, query, tokenBudget));
+    },
+    [activeBookId, entries],
   );
 
-  const buildContextForQuery = useCallback((query: string, tokenBudget?: number) => {
-    return buildRelevantMemoryContext(
-      entriesRef.current.filter(e => !e.bookId || e.bookId === activeBookId),
-      query,
-      tokenBudget,
-    ).context;
-  }, [activeBookId]);
+  const applyBundleSnapshot = useCallback(
+    async (query = '', tokenBudget?: number): Promise<ContextBundle> => {
+      lastBundleArgsRef.current = { query, tokenBudget };
+      const requestId = ++bundleRequestSeqRef.current;
+      const bundle = await buildBundleCore(query, tokenBudget);
+      if (requestId === bundleRequestSeqRef.current) {
+        setBundleSnapshot(bundle);
+      }
+      return bundle;
+    },
+    [buildBundleCore],
+  );
+
+  useEffect(() => {
+    let cancelled = false;
+    const { query, tokenBudget } = lastBundleArgsRef.current;
+    const requestId = ++bundleRequestSeqRef.current;
+    buildBundleCore(query, tokenBudget)
+      .then((bundle) => {
+        if (!cancelled && requestId === bundleRequestSeqRef.current) {
+          setBundleSnapshot(bundle);
+        }
+      })
+      .catch(() => {
+        if (!cancelled && requestId === bundleRequestSeqRef.current) {
+          setBundleSnapshot(null);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [buildBundleCore]);
+
+  const memoryContext = bundleSnapshot?.promptText ?? '';
+
+  const buildContextForQuery = useCallback(async (query: string, tokenBudget?: number) => {
+    const bundle = await applyBundleSnapshot(query, tokenBudget);
+    return bundle.promptText;
+  }, [applyBundleSnapshot]);
 
   const buildBundle = useCallback(
-    (query = '', tokenBudget?: number): Promise<ContextBundle> => {
-      const bookEntries = entriesRef.current.filter(e => !e.bookId || e.bookId === activeBookId);
-      if (activeBookId) {
-        return buildContextBundle(activeBookId, bookEntries, query, tokenBudget);
-      }
-      return Promise.resolve(buildContextBundleLocal(bookEntries, query, tokenBudget));
-    },
-    [activeBookId],
+    (query = '', tokenBudget?: number): Promise<ContextBundle> => applyBundleSnapshot(query, tokenBudget),
+    [applyBundleSnapshot],
   );
-
-  const bundleSnapshot = useMemo((): ContextBundle => {
-    return buildContextBundleLocal(bookEntries, '', undefined);
-  }, [bookEntries]);
 
   return {
     entries: bookEntries,

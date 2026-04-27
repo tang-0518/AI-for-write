@@ -7,9 +7,10 @@
 #   2. 安装依赖（如需）
 #   3. 启动 MCP 服务器（含知识图谱 API，端口 3001）
 #   4. 等待 API 就绪
-#   5. 启动前端 Vite 开发服务器（端口 5174）
-#   6. 等待前端就绪
-#   7. 打开浏览器
+#   5. 启动 Python 后端（可选，端口 8005）
+#   6. 启动前端 Vite 开发服务器（端口 5174）
+#   7. 等待前端就绪
+#   8. 打开浏览器
 # =============================================================
 
 # 设置控制台编码为 UTF-8
@@ -23,8 +24,10 @@ $ErrorActionPreference = "Stop"
 
 $ROOT          = $PSScriptRoot
 $MCP_DIR       = Join-Path $ROOT "mcp-server"
+$BACKEND_DIR   = Join-Path $ROOT "backend"
 $FRONTEND_PORT = 5174
 $API_PORT      = 3001
+$BACKEND_PORT  = 8005
 $BROWSER_URL   = "http://localhost:$FRONTEND_PORT"
 
 # ── 颜色输出辅助 ───────────────────────────────────────
@@ -33,6 +36,26 @@ function Write-OK    { param($msg) Write-Host "  ✓ $msg"  -ForegroundColor Gre
 function Write-Warn  { param($msg) Write-Host "  ⚠ $msg"  -ForegroundColor Yellow }
 function Write-Fail  { param($msg) Write-Host "  ✗ $msg"  -ForegroundColor Red }
 function Write-Info  { param($msg) Write-Host "    $msg"  -ForegroundColor DarkGray }
+
+function Resolve-BackendPython {
+    $candidates = @(
+        (Join-Path $BACKEND_DIR ".venv\Scripts\python.exe"),
+        (Join-Path $ROOT ".venv\Scripts\python.exe")
+    )
+
+    foreach ($candidate in $candidates) {
+        if (Test-Path $candidate) {
+            return $candidate
+        }
+    }
+
+    $pythonCmd = Get-Command python -ErrorAction SilentlyContinue
+    if ($pythonCmd) {
+        return $pythonCmd.Source
+    }
+
+    return $null
+}
 
 # ── 横幅 ──────────────────────────────────────────
 Clear-Host
@@ -95,6 +118,10 @@ Write-Step "检查依赖"
 
 $mcpModules      = Join-Path $MCP_DIR "node_modules"
 $frontendModules = Join-Path $ROOT     "node_modules"
+$backendExists   = Test-Path (Join-Path $BACKEND_DIR "interfaces\main.py")
+$backendPython   = $null
+$backendCanStart = $false
+$backendReady    = $false
 
 if (-not (Test-Path $mcpModules)) {
     Write-Info "MCP 服务器首次安装依赖..."
@@ -116,6 +143,47 @@ if (-not (Test-Path $frontendModules)) {
     Write-OK "前端依赖已存在"
 }
 
+if ($backendExists) {
+    Write-Step "检查 Python 后端"
+
+    $backendPython = Resolve-BackendPython
+    if (-not $backendPython) {
+        Write-Warn "检测到 backend/，但未找到可用 Python；后端启动将跳过"
+    } else {
+        $pythonCandidates = @($backendPython)
+        $systemPython = Get-Command python -ErrorAction SilentlyContinue
+        if ($systemPython -and $systemPython.Source -notin $pythonCandidates) {
+            $pythonCandidates += $systemPython.Source
+        }
+
+        $backendDependencyReady = $false
+        foreach ($candidate in $pythonCandidates) {
+            & $candidate -c "import fastapi, uvicorn" 2>$null
+            if ($LASTEXITCODE -eq 0) {
+                $backendPython = $candidate
+                $backendDependencyReady = $true
+                break
+            }
+        }
+
+        Write-OK "Python 可用：$backendPython"
+
+        $backendEnv = Join-Path $BACKEND_DIR ".env"
+        $backendEnvExample = Join-Path $BACKEND_DIR ".env.example"
+        if (-not (Test-Path $backendEnv) -and (Test-Path $backendEnvExample)) {
+            Copy-Item $backendEnvExample $backendEnv
+            Write-Warn "backend/.env 不存在，已从 .env.example 复制"
+        }
+
+        if ($backendDependencyReady) {
+            $backendCanStart = $true
+            Write-OK "FastAPI / uvicorn 依赖已满足"
+        } else {
+            Write-Warn "后端依赖未安装，可执行：pip install -r backend/requirements.txt"
+        }
+    }
+}
+
 # ── 4. 清理旧进程 ──────────────────────────────────────
 function Stop-PortProcess {
     param([int]$Port)
@@ -134,8 +202,11 @@ function Stop-PortProcess {
 Write-Step "清理旧进程"
 Stop-PortProcess $API_PORT
 Stop-PortProcess $FRONTEND_PORT
+if ($backendExists) {
+    Stop-PortProcess $BACKEND_PORT
+}
 Start-Sleep -Milliseconds 500
-Write-OK "端口 $API_PORT 和 $FRONTEND_PORT 已释放"
+Write-OK "端口 $API_PORT、$FRONTEND_PORT$(if ($backendExists) { "、$BACKEND_PORT" }) 已释放"
 
 # ── 5. 启动 MCP 服务器 ───────────────────────────────────
 # 修复：用 -WorkingDirectory 替代 -Command 内的 Set-Location
@@ -179,7 +250,45 @@ if (-not $ready) {
 }
 Write-OK "MCP API 已就绪 → http://127.0.0.1:$API_PORT/api"
 
-# ── 7. 启动前端 ──────────────────────────────────────────
+# ── 7. 启动 Python 后端（可选） ───────────────────────────
+if ($backendExists -and $backendCanStart) {
+    Write-Step "启动 PlotPilot 风格 Python 后端 (端口 $BACKEND_PORT)"
+
+    $backendCmd = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; chcp 65001 | Out-Null; `$host.UI.RawUI.WindowTitle='PlotPilot Backend'; Write-Host '  [Backend] 启动中...' -ForegroundColor Cyan; & '$backendPython' -m uvicorn interfaces.main:app --host 127.0.0.1 --port $BACKEND_PORT"
+    $backendWindow = Start-Process powershell `
+        -ArgumentList "-NoExit", "-Command", $backendCmd `
+        -WorkingDirectory $BACKEND_DIR `
+        -PassThru -WindowStyle Normal
+
+    Write-Info "Backend 窗口 PID: $($backendWindow.Id)"
+    Write-Step "等待 Python 后端就绪"
+
+    $elapsed = 0
+    $dots    = ""
+    while ($elapsed -lt $maxWait) {
+        try {
+            $resp = Invoke-WebRequest -Uri "http://127.0.0.1:$BACKEND_PORT/health" `
+                -TimeoutSec 2 -UseBasicParsing -ErrorAction Stop
+            if ($resp.StatusCode -eq 200) { $backendReady = $true; break }
+        } catch {}
+        $dots += "."
+        Write-Host "`r    等待中$dots " -NoNewline -ForegroundColor DarkGray
+        Start-Sleep -Milliseconds 1000
+        $elapsed += 1
+    }
+
+    Write-Host ""
+    if ($backendReady) {
+        Write-OK "Python 后端已就绪 → http://127.0.0.1:$BACKEND_PORT"
+    } else {
+        Write-Warn "Python 后端未在 ${maxWait}s 内完成启动，请检查 Backend 窗口日志"
+    }
+} elseif ($backendExists) {
+    Write-Step "跳过 Python 后端启动"
+    Write-Warn "backend/ 已存在，但当前环境未满足启动条件"
+}
+
+# ── 8. 启动前端 ──────────────────────────────────────────
 Write-Step "启动前端 Vite 开发服务器 (端口 $FRONTEND_PORT)"
 
 $feCmd = "[Console]::OutputEncoding=[System.Text.Encoding]::UTF8; chcp 65001 | Out-Null; `$host.UI.RawUI.WindowTitle='Frontend'; Write-Host '  [Frontend] 启动中...' -ForegroundColor Cyan; npm run dev -- --port $FRONTEND_PORT"
@@ -190,7 +299,7 @@ $frontendWindow = Start-Process powershell `
 
 Write-Info "前端窗口 PID: $($frontendWindow.Id)"
 
-# ── 8. 等待前端就绪 ────────────────────────────────────
+# ── 9. 等待前端就绪 ────────────────────────────────────
 Write-Step "等待前端就绪"
 
 $elapsed = 0
@@ -219,7 +328,7 @@ if (-not $ready) {
 }
 Write-OK "前端已就绪 → $BROWSER_URL"
 
-# ── 9. 打开浏览器 ────────────────────────────────────────
+# ── 10. 打开浏览器 ───────────────────────────────────────
 Start-Sleep -Milliseconds 800
 Write-Step "打开浏览器"
 Start-Process $BROWSER_URL
@@ -232,6 +341,10 @@ Write-Host "  ║           ✅  所有服务已启动              ║" -Foregr
 Write-Host "  ╟══════════════════════════════════════════╢" -ForegroundColor Green
 Write-Host "  ║  前端       http://localhost:$FRONTEND_PORT      ║" -ForegroundColor Green
 Write-Host "  ║  图谱 API   http://localhost:$API_PORT/api   ║" -ForegroundColor Green
+if ($backendExists) {
+    $backendSummary = if ($backendReady) { "http://localhost:$BACKEND_PORT" } else { "未就绪，见 Backend 窗口" }
+    Write-Host ("  ║  Python后端 {0,-28}║" -f $backendSummary) -ForegroundColor Green
+}
 Write-Host "  ╰══════════════════════════════════════════╯" -ForegroundColor Green
 Write-Host ""
 Write-Host "  关闭此窗口不会停止服务，直接关闭对应子窗口即可。" -ForegroundColor DarkGray

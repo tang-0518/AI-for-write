@@ -8,6 +8,96 @@
 import type { NovelEntity, NovelRelation, NovelGraph, NovelEntityType } from './types';
 import { dbGetAll, dbPut, dbDelete } from '../db/index';
 
+const MAX_OBSERVATIONS = 15;
+
+function makeEntityKey(
+  bookId: string,
+  entity: Pick<NovelEntity, 'name' | 'type'>,
+): string {
+  return `${bookId}::${entity.type}::${entity.name.trim()}`;
+}
+
+function makeRelationKey(
+  bookId: string,
+  relation: Pick<NovelRelation, 'from' | 'to' | 'relationType'>,
+): string {
+  return `${bookId}::${relation.from}::${relation.to}::${relation.relationType}`;
+}
+
+function mergeObservations(existing: string[], incoming: string[]): string[] {
+  const merged = Array.from(new Set([...existing, ...incoming].map(line => line.trim()).filter(Boolean)));
+  return merged.length > MAX_OBSERVATIONS ? merged.slice(-MAX_OBSERVATIONS) : merged;
+}
+
+function mergeEntityRecord(
+  existing: NovelEntity,
+  entity: Omit<NovelEntity, 'id' | 'bookId' | 'createdAt' | 'updatedAt'>,
+  now: number,
+): NovelEntity {
+  return {
+    ...existing,
+    name: entity.name.trim(),
+    attributes: { ...existing.attributes, ...(entity.attributes ?? {}) },
+    observations: mergeObservations(existing.observations, entity.observations ?? []),
+    firstChapter: existing.firstChapter ?? entity.firstChapter,
+    tags: Array.from(new Set([...existing.tags, ...(entity.tags ?? [])].map(tag => tag.trim()).filter(Boolean))),
+    source: entity.source,
+    updatedAt: now,
+  };
+}
+
+function createEntityRecord(
+  bookId: string,
+  entity: Omit<NovelEntity, 'id' | 'bookId' | 'createdAt' | 'updatedAt'>,
+  now: number,
+): NovelEntity {
+  return {
+    id: `ge_${now}_${Math.random().toString(36).slice(2, 6)}`,
+    bookId,
+    name: entity.name.trim(),
+    type: entity.type,
+    attributes: entity.attributes ?? {},
+    observations: mergeObservations([], entity.observations ?? []),
+    firstChapter: entity.firstChapter,
+    tags: Array.from(new Set((entity.tags ?? []).map(tag => tag.trim()).filter(Boolean))),
+    source: entity.source,
+    createdAt: now,
+    updatedAt: now,
+  };
+}
+
+function mergeRelationRecord(
+  existing: NovelRelation,
+  relation: Omit<NovelRelation, 'id' | 'bookId' | 'createdAt'>,
+): NovelRelation {
+  return {
+    ...existing,
+    weight: relation.weight ?? existing.weight,
+    notes: relation.notes ?? existing.notes,
+    chapter: relation.chapter ?? existing.chapter,
+    source: relation.source,
+  };
+}
+
+function createRelationRecord(
+  bookId: string,
+  relation: Omit<NovelRelation, 'id' | 'bookId' | 'createdAt'>,
+  now: number,
+): NovelRelation {
+  return {
+    id: `gr_${now}_${Math.random().toString(36).slice(2, 6)}`,
+    bookId,
+    from: relation.from,
+    to: relation.to,
+    relationType: relation.relationType,
+    weight: relation.weight ?? 0.7,
+    notes: relation.notes,
+    chapter: relation.chapter,
+    source: relation.source,
+    createdAt: now,
+  };
+}
+
 // ── 读取书目图谱 ──────────────────────────────────────────────
 export async function readGraph(bookId: string): Promise<NovelGraph> {
   const [entities, relations] = await Promise.all([
@@ -28,41 +118,15 @@ export async function upsertEntity(
 ): Promise<NovelEntity> {
   const all = await dbGetAll<NovelEntity>('graph_entities');
   const now = Date.now();
-  const existing = all.find(
-    e => e.bookId === bookId
-      && e.name.trim() === entity.name.trim()
-      && e.type === entity.type,
-  );
+  const existing = all.find(e => makeEntityKey(bookId, e) === makeEntityKey(bookId, entity));
 
   if (existing) {
-    // 合并 observations（去重追加），合并 attributes，合并 tags（去重）
-    const mergedObs = Array.from(new Set([...existing.observations, ...entity.observations]));
-    const mergedAttrs = { ...existing.attributes, ...entity.attributes };
-    const mergedTags  = Array.from(new Set([...existing.tags, ...entity.tags]));
-    const updated: NovelEntity = {
-      ...existing,
-      attributes:   mergedAttrs,
-      observations: mergedObs,
-      tags:         mergedTags,
-      updatedAt:    now,
-    };
+    const updated = mergeEntityRecord(existing, entity, now);
     await dbPut('graph_entities', updated);
     return updated;
   }
 
-  const created: NovelEntity = {
-    id:        `ge_${now}_${Math.random().toString(36).slice(2, 6)}`,
-    bookId,
-    name:      entity.name.trim(),
-    type:      entity.type,
-    attributes:   entity.attributes   ?? {},
-    observations: entity.observations ?? [],
-    firstChapter: entity.firstChapter,
-    tags:         entity.tags         ?? [],
-    source:    entity.source,
-    createdAt: now,
-    updatedAt: now,
-  };
+  const created = createEntityRecord(bookId, entity, now);
   await dbPut('graph_entities', created);
   return created;
 }
@@ -74,35 +138,15 @@ export async function upsertRelation(
 ): Promise<NovelRelation> {
   const all = await dbGetAll<NovelRelation>('graph_relations');
   const now = Date.now();
-  const existing = all.find(
-    r => r.bookId === bookId
-      && r.from === relation.from
-      && r.to   === relation.to
-      && r.relationType === relation.relationType,
-  );
+  const existing = all.find(r => makeRelationKey(bookId, r) === makeRelationKey(bookId, relation));
 
   if (existing) {
-    const updated: NovelRelation = {
-      ...existing,
-      weight: relation.weight ?? existing.weight,
-      notes:  relation.notes  ?? existing.notes,
-    };
+    const updated = mergeRelationRecord(existing, relation);
     await dbPut('graph_relations', updated);
     return updated;
   }
 
-  const created: NovelRelation = {
-    id:           `gr_${now}_${Math.random().toString(36).slice(2, 6)}`,
-    bookId,
-    from:         relation.from,
-    to:           relation.to,
-    relationType: relation.relationType,
-    weight:       relation.weight ?? 0.7,
-    notes:        relation.notes,
-    chapter:      relation.chapter,
-    source:       relation.source,
-    createdAt:    now,
-  };
+  const created = createRelationRecord(bookId, relation, now);
   await dbPut('graph_relations', created);
   return created;
 }
@@ -112,14 +156,52 @@ export async function upsertEntities(
   bookId: string,
   entities: Array<Omit<NovelEntity, 'id' | 'bookId' | 'createdAt' | 'updatedAt'>>,
 ): Promise<void> {
-  for (const e of entities) await upsertEntity(bookId, e);
+  if (entities.length === 0) return;
+
+  const all = await dbGetAll<NovelEntity>('graph_entities');
+  const entityMap = new Map(
+    all
+      .filter(entity => entity.bookId === bookId)
+      .map(entity => [makeEntityKey(bookId, entity), entity] as const),
+  );
+
+  for (const entity of entities) {
+    const now = Date.now();
+    const key = makeEntityKey(bookId, entity);
+    const existing = entityMap.get(key);
+    const next = existing
+      ? mergeEntityRecord(existing, entity, now)
+      : createEntityRecord(bookId, entity, now);
+
+    await dbPut('graph_entities', next);
+    entityMap.set(key, next);
+  }
 }
 
 export async function upsertRelations(
   bookId: string,
   relations: Array<Omit<NovelRelation, 'id' | 'bookId' | 'createdAt'>>,
 ): Promise<void> {
-  for (const r of relations) await upsertRelation(bookId, r);
+  if (relations.length === 0) return;
+
+  const all = await dbGetAll<NovelRelation>('graph_relations');
+  const relationMap = new Map(
+    all
+      .filter(relation => relation.bookId === bookId)
+      .map(relation => [makeRelationKey(bookId, relation), relation] as const),
+  );
+
+  for (const relation of relations) {
+    const now = Date.now();
+    const key = makeRelationKey(bookId, relation);
+    const existing = relationMap.get(key);
+    const next = existing
+      ? mergeRelationRecord(existing, relation)
+      : createRelationRecord(bookId, relation, now);
+
+    await dbPut('graph_relations', next);
+    relationMap.set(key, next);
+  }
 }
 
 // ── 删除实体及相关关系 ────────────────────────────────────────

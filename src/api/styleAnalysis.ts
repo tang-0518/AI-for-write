@@ -8,6 +8,19 @@ import { parseJsonObject } from './gemini';
 
 const API_BASE_STYLE = 'https://generativelanguage.googleapis.com/v1beta/models';
 
+interface GeminiJsonPart {
+  text?: string;
+  thought?: boolean;
+}
+
+interface GeminiJsonResponse {
+  candidates?: Array<{
+    content?: {
+      parts?: GeminiJsonPart[];
+    };
+  }>;
+}
+
 /**
  * 调用 Gemini 并强制要求 JSON 输出（responseMimeType）。
  * 比 callGemini 更健壮：启用 JSON 模式 + 增大 token 上限。
@@ -36,14 +49,14 @@ async function callGeminiJson(
       : `HTTP ${response.status}`;
     throw new Error(msg);
   }
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const data = await response.json() as Record<string, any>;
+  const data = await response.json() as GeminiJsonResponse;
   // Gemini 2.5 Pro（思考模型）会在 parts 中混入 thought:true 的思考片段，
   // 实际 JSON 输出在最后一个非思考 part 中。过滤后取最后一段文本。
-  // eslint-disable-next-line @typescript-eslint/no-explicit-any
-  const parts: any[] = data?.candidates?.[0]?.content?.parts ?? [];
-  const textPart = parts.filter((p: any) => !p.thought && typeof p.text === 'string').pop();
-  return (textPart?.text as string) ?? '';
+  const parts = data.candidates?.[0]?.content?.parts ?? [];
+  const textPart = parts
+    .filter((part): part is GeminiJsonPart & { text: string } => !part.thought && typeof part.text === 'string')
+    .pop();
+  return textPart?.text ?? '';
 }
 
 /**

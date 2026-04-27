@@ -9,7 +9,7 @@ interface AiSuggestionPanelProps {
   pendingContinuation: string;
   hasPendingContinuation: boolean;
   isTruncated?: boolean;
-  pendingPolish: { text: string; selStart: number; selEnd: number } | null;
+  pendingPolish: { text: string; selStart: number; selEnd: number; mode: 'polish' | 'rewrite'; label: string } | null;
   onAcceptContinuation: () => void;
   onRejectContinuation: () => void;
   onResumeWriting?: () => void;
@@ -40,6 +40,9 @@ export function AiSuggestionPanel({
   const polishDelta = pendingPolish
     ? pendingPolish.text.replace(/\s/g, '').length - origSelected
     : 0;
+  const isRewrite = pendingPolish?.mode === 'rewrite';
+  const panelTitle = isRewrite ? `AI ${pendingPolish?.label ?? '改写'}` : 'AI 润色';
+  const revisedLabel = isRewrite ? '改写后' : '润色后';
 
   return (
     <div className="ai-suggestion-panel">
@@ -97,7 +100,7 @@ export function AiSuggestionPanel({
           <div className="ai-panel-header">
             <div className="ai-panel-title">
               <span className="ai-panel-icon">💎</span>
-              AI 润色
+              {panelTitle}
               {pendingPolish !== null && polishDelta !== 0 && (
                 <span className={`ai-panel-count ${polishDelta > 0 ? 'delta-plus' : 'delta-minus'}`}>
                   {polishDelta > 0 ? '+' : ''}{polishDelta}
@@ -131,7 +134,7 @@ export function AiSuggestionPanel({
                 </div>
                 <div className="ai-polish-divider" />
                 <div className="ai-polish-col">
-                  <div className="ai-polish-col-label">润色后</div>
+                  <div className="ai-polish-col-label">{revisedLabel}</div>
                   <div className="ai-polish-col-body">{pendingPolish.text}</div>
                 </div>
               </div>

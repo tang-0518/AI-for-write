@@ -1,13 +1,18 @@
 import { defineConfig } from 'vite'
 import react from '@vitejs/plugin-react'
+import tailwindcss from '@tailwindcss/vite'
+import fs from 'fs'
 import path from 'path'
+
+const workspaceRoot = fs.realpathSync.native(process.cwd())
 
 // https://vite.dev/config/
 export default defineConfig({
-  plugins: [react()],
+  root: workspaceRoot,
+  plugins: [react(), tailwindcss()],
   resolve: {
     alias: {
-      '@': path.resolve(__dirname, './src'),
+      '@': path.resolve(workspaceRoot, './src'),
     },
   },
   server: {

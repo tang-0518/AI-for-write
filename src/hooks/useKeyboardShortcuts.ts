@@ -1,9 +1,8 @@
 // =============================================================
-// hooks/useKeyboardShortcuts.ts — 全局键盘快捷键
-// 用 ref 存储最新回调，避免每次回调变化都重新注册监听器
+// hooks/useKeyboardShortcuts.ts - 全局键盘快捷键
 // =============================================================
 
-import { useEffect, useRef } from 'react';
+import { useEffect, useEffectEvent } from 'react';
 
 interface UseKeyboardShortcutsOptions {
   onFind: () => void;
@@ -16,39 +15,65 @@ interface UseKeyboardShortcutsOptions {
   onSave?: () => void;
 }
 
+type ShortcutScope = 'global' | 'writing-input' | 'other-input';
+
+function getShortcutScope(target: EventTarget | null): ShortcutScope {
+  if (!(target instanceof HTMLElement)) return 'global';
+
+  if (target.closest('.editor-textarea, .command-input, .instruction-input')) {
+    return 'writing-input';
+  }
+
+  if (target.isContentEditable) return 'other-input';
+
+  return target.closest('input, textarea, select, [contenteditable="true"], [contenteditable=""], [role="textbox"]')
+    ? 'other-input'
+    : 'global';
+}
+
 export function useKeyboardShortcuts(opts: UseKeyboardShortcutsOptions) {
-  const ref = useRef(opts);
-  ref.current = opts; // 每次 render 同步最新，不触发 effect 重跑
+  const handleKeydown = useEffectEvent((event: KeyboardEvent) => {
+    if (event.defaultPrevented) return;
+
+    const ctrl = event.ctrlKey || event.metaKey;
+    const shortcutScope = getShortcutScope(event.target);
+    const inProtectedInput = shortcutScope === 'other-input';
+    const {
+      onFind,
+      onReplace,
+      onCrossSearch,
+      onFontIncrease,
+      onFontDecrease,
+      onHelp,
+      onEscape,
+      onSave,
+    } = opts;
+
+    if (event.key === 'Escape') {
+      if (inProtectedInput) return;
+      onEscape?.();
+      return;
+    }
+
+    if (!ctrl && event.key === '?' && shortcutScope === 'global') {
+      event.preventDefault();
+      onHelp?.();
+      return;
+    }
+
+    if (!ctrl || inProtectedInput) return;
+
+    if (event.key === 'f' && !event.shiftKey) { event.preventDefault(); onFind(); }
+    if (event.key === 'h' && !event.shiftKey) { event.preventDefault(); onReplace(); }
+    if ((event.key === 'F' || event.key === 'f') && event.shiftKey) { event.preventDefault(); onCrossSearch(); }
+    if (event.key === '=' || event.key === '+') { event.preventDefault(); onFontIncrease(); }
+    if (event.key === '-') { event.preventDefault(); onFontDecrease(); }
+    if (event.key === 's' && !event.shiftKey) { event.preventDefault(); onSave?.(); }
+  });
 
   useEffect(() => {
-    const handler = (e: KeyboardEvent) => {
-      const ctrl = e.ctrlKey || e.metaKey;
-      const { onFind, onReplace, onCrossSearch, onFontIncrease, onFontDecrease, onHelp, onEscape, onSave } = ref.current;
-
-      // ESC：关闭当前打开的面板（不需要 Ctrl）
-      if (e.key === 'Escape') {
-        onEscape?.();
-        return;
-      }
-
-      // ? 键（不需要 Ctrl）触发帮助
-      if (!ctrl && e.key === '?' && !(e.target instanceof HTMLInputElement) && !(e.target instanceof HTMLTextAreaElement)) {
-        e.preventDefault();
-        onHelp?.();
-        return;
-      }
-
-      if (!ctrl) return;
-
-      if (e.key === 'f' && !e.shiftKey) { e.preventDefault(); onFind(); }
-      if (e.key === 'h' && !e.shiftKey) { e.preventDefault(); onReplace(); }
-      if ((e.key === 'F' || e.key === 'f') && e.shiftKey) { e.preventDefault(); onCrossSearch(); }
-      if (e.key === '=' || e.key === '+') { e.preventDefault(); onFontIncrease(); }
-      if (e.key === '-') { e.preventDefault(); onFontDecrease(); }
-      if (e.key === 's' && !e.shiftKey) { e.preventDefault(); onSave?.(); }
-    };
-
+    const handler = (event: KeyboardEvent) => handleKeydown(event);
     window.addEventListener('keydown', handler);
     return () => window.removeEventListener('keydown', handler);
-  }, []); // 空依赖：监听器只注册一次，通过 ref 访问最新回调
+  }, []);
 }

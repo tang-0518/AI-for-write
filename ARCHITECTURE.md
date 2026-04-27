@@ -3,6 +3,7 @@
 > 本文件是项目的单一信息源（Single Source of Truth）。  
 > 每次修改功能模块后，在「改进日志」章节追加一条记录。  
 > 新增/删除文件时同步更新「目录结构」。
+> 当前架构已演进为「前端本地优先 + `backend/` 可独立运行服务端」双轨结构。
 
 ---
 
@@ -27,8 +28,9 @@
 | 构建工具 | Vite |
 | 样式 | 纯 CSS（单文件 `App.css`，CSS 变量主题系统）|
 | 持久化 | IndexedDB（通过 `src/db/index.ts` 封装）|
-| AI 接口 | Google Gemini API（`generativelanguage.googleapis.com`）|
+| AI 接口 | Google Gemini API（`generativelanguage.googleapis.com`） + Python editor API（`/api/v1/editor/*`）|
 | 状态管理 | React Hooks（无外部状态库）|
+| 服务端（新增） | Python 3.12 + FastAPI + uvicorn（`backend/`，复刻 PlotPilot 后端骨架） |
 
 ---
 
@@ -43,7 +45,7 @@
 ├── types.ts                    # 全局类型 & 常量（AppSettings, Book, Draft 等）
 │
 ├── api/                        # AI 接口层（无状态，纯函数）
-│   ├── gemini.ts               # Gemini API 封装：续写 / 润色 / 实体提取 / 摘要
+│   ├── gemini.ts               # 前端 AI 封装：核心编辑器能力转发到 Python editor API，其余仍保留 Gemini 调用
 │   ├── cache.ts                # L1/L2 双层生成缓存（内存 Map + token 估算）
 │   ├── contextCompression.ts   # 上下文压缩（章节过长时自动摘要）
 │   └── styleAnalysis.ts        # 文风分析（imitation mode 用）
@@ -150,7 +152,20 @@
     └── <书名>/
         ├── bible.json          # 小说圣经（规划文档聚合）
         └── graph.jsonl         # 知识图谱（每行一个实体或关系）
+
+【Python 后端】backend/
+├── application/               # 应用层：工作流、用例编排、服务聚合
+├── domain/                    # 领域层：实体、值对象、仓储接口
+├── infrastructure/            # 基础设施：SQLite / 向量库 / LLM Provider / Prompt
+├── interfaces/                # FastAPI 入口与 REST 路由
+├── scripts/                   # 迁移、守护进程、诊断工具
+├── tests/                     # 后端测试
+├── requirements.txt           # Python 依赖清单
+├── .env.example               # 后端环境变量模板
+└── start.ps1                  # Windows 后端启动脚本
 ```
+
+> 当前书籍、章节、记忆与图谱仍默认走本地 IndexedDB；核心编辑器 AI 与章节完成 AI（摘要 / 提取 / 大纲）已切到 `backend/` 的 `/api/v1/editor/*`。
 
 ---
 
@@ -374,8 +389,43 @@ bookEntries（当前书 MemoryEntry[]）
 
 ## 7. 改进日志
 
+#### 2026-04-17 — backend/editor + src/api/gemini.ts — 章节完成 AI 切换到 Python 后端
+
+- 新增 `backend/application/engine/services/chapter_generation_service.py`，在 Python 侧统一承接章节摘要、记忆/图谱提取、实体提取和大纲生成
+- `backend/interfaces/api/v1/engine/editor_routes.py` 新增 `/api/v1/editor/chapter-summary`、`chapter-extract-all`、`chapter-extract-entities`、`outline`
+- `src/api/gemini.ts` 将 `generateChapterSummary`、`extractChapterAll`、`extractChapterEntities`、`generateOutline` 改为调用本地 Python editor API，并补齐 `rewriteParagraph` / `explainText` 兼容导出
+- 验证通过：`python -m compileall backend/application/engine/services/chapter_generation_service.py backend/interfaces/api/v1/engine/editor_routes.py backend/interfaces/main.py`、`npm run build`
+
+#### 2026-04-17 — backend/editor + src/api/gemini.ts — 前端核心续写切换到 Python 后端
+
+- 新增 `backend/application/engine/services/editor_generation_service.py`，在 Python 侧承接续写、接续、润色、改写、解释的 prompt 组装与模型调用
+- 新增 `backend/interfaces/api/v1/engine/editor_routes.py`，暴露 `/api/v1/editor/continue-stream`、`resume-stream`、`polish`、`rewrite`、`explain`
+- `src/api/gemini.ts` 改为将核心编辑器请求转发到 Python editor API，保留 `useEditor.ts` 现有调用签名
+- `vite.config.ts` 新增真实路径 `root` 处理，修复链接工作区下的生产构建失败
+
+
 > 格式：`#### YYYY-MM-DD — <模块名> — <一句话说明>`  
 > 按日期倒序，最新在前。
+
+---
+
+#### 2026-04-17 — backend/ — 迁入 PlotPilot Python 后端骨架
+
+**新增文件/目录**
+- `backend/application/`
+- `backend/domain/`
+- `backend/infrastructure/`
+- `backend/interfaces/`
+- `backend/scripts/`
+- `backend/tests/`
+- `backend/requirements.txt`
+- `backend/start.ps1`
+- `backend/README.md`
+
+**功能说明**
+- 将 PlotPilot 的 DDD 四层后端整体并入当前仓库，保留 FastAPI 入口 `backend/interfaces/main.py`。
+- 新增后端独立启动路径，支持通过 `backend/start.ps1` 或根目录 `dev-start.ps1` 拉起服务。
+- 保留当前前端本地优先模式，不强制立即改写为服务端依赖，先完成后端落仓与后续对接基座。
 
 ---
 

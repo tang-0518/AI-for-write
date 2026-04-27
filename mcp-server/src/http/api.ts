@@ -222,7 +222,8 @@ export function createApiApp(): express.Application {
   });
 
   // ── 错误处理 ────────────────────────────────────────────
-  app.use((err: Error, _req: Request, res: Response, _next: NextFunction) => {
+  app.use((err: Error, _req: Request, res: Response, next: NextFunction) => {
+    void next;
     process.stderr.write(`[api] 未捕获错误: ${err.message}\n`);
     res.status(500).json({ error: err.message });
   });

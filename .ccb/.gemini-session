@@ -1,0 +1,15 @@
+{
+  "session_id": "ai-1776256898-19748",
+  "ccb_project_id": "c649f25b9fba555af288f024361386a3a5394d0bad0380249ea128228d307dc6",
+  "runtime_dir": "C:\\Users\\Administrator\\AppData\\Local\\Temp\\claude-ai-Administrator\\ai-1776256898-19748\\gemini",
+  "terminal": "wezterm",
+  "tmux_session": null,
+  "pane_id": "0",
+  "pane_title_marker": "CCB-Gemini-c649f25b",
+  "work_dir": "C:\\Users\\Administrator\\Desktop\\小说辅助创作-dev",
+  "work_dir_norm": "c:/users/administrator/desktop/小说辅助创作-dev",
+  "start_dir": "C:\\Users\\Administrator\\Desktop\\小说辅助创作-dev",
+  "active": true,
+  "started_at": "2026-04-15 20:41:39",
+  "start_cmd": "$esc=[char]27; [Console]::Write(\"$esc]0;CCB-Gemini-c649f25b`a\"); $Host.UI.RawUI.WindowTitle = 'CCB-Gemini-c649f25b'; $env:CCB_MANAGED = '1'; $env:CCB_PARENT_PID = '19748'; $env:CCB_RUN_DIR = 'C:\\Users\\Administrator\\.cache\\ccb\\projects\\c649f25b9fba555a'; $env:CCB_CALLER = 'gemini'; $env:Path = 'C:\\Users\\Administrator\\AppData\\Local\\codex-dual\\bin;C:\\Program Files (x86)\\Razer\\ChromaBroadcast\\bin;C:\\Program Files\\Razer\\ChromaBroadcast\\bin;C:\\Windows\\system32;C:\\Windows;C:\\Windows\\System32\\Wbem;C:\\Windows\\System32\\WindowsPowerShell\\v1.0\\;C:\\Windows\\System32\\OpenSSH\\;C:\\Program Files\\dotnet\\;C:\\Program Files\\NVIDIA Corporation\\NVIDIA App\\NvDLISR;C:\\Program Files (x86)\\NVIDIA Corporation\\PhysX\\Common;C:\\Windows\\system32\\config\\systemprofile\\AppData\\Local\\Microsoft\\WindowsApps;D:\\Git\\cmd;D:\\New Folder\\;C:\\Program Files\\Docker\\Docker\\resources\\bin;C:\\Program Files\\WezTerm;;C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\Scripts\\;C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Python312\\;C:\\Users\\Administrator\\AppData\\Local\\Programs\\Python\\Launcher\\;C:\\Users\\Administrator\\.local\\bin;C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WindowsApps;C:\\Users\\Administrator\\AppData\\Local\\Programs\\Ollama;D:\\Microsoft VS Code\\bin;C:\\Users\\Administrator\\AppData\\Roaming\\npm;C:\\Users\\Administrator\\AppData\\Local\\GitHubDesktop\\bin;D:\\Antigravity\\bin;C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WinGet\\Links;C:\\Users\\Administrator\\AppData\\Local\\Microsoft\\WinGet\\Packages\\yt-dlp.FFmpeg_Microsoft.Winget.Source_8wekyb3d8bbwe\\ffmpeg-N-123074-g4e32fb4c2a-win64-gpl/bin;C:\\Users\\Administrator\\AppData\\Local\\codex-dual\\bin'; gemini"
+}

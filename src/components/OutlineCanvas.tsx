@@ -125,8 +125,11 @@ export function OutlineCanvas({
     if (!el) return;
     const ro = new ResizeObserver(() => setCanvasW(el.clientWidth || 900));
     ro.observe(el);
-    setCanvasW(el.clientWidth || 900);
-    return () => ro.disconnect();
+    const frameId = window.requestAnimationFrame(() => setCanvasW(el.clientWidth || 900));
+    return () => {
+      window.cancelAnimationFrame(frameId);
+      ro.disconnect();
+    };
   }, []);
 
   // ── 计算位置 ──────────────────────────────────────────────
@@ -146,6 +149,7 @@ export function OutlineCanvas({
 
   // ── 平移状态 ──────────────────────────────────────────────
   const [pan, setPan] = useState({ x: 0, y: 0 });
+  const [isPanning, setIsPanning] = useState(false);
   const panStart = useRef<{ mx: number; my: number; px: number; py: number } | null>(null);
 
   // ── 悬停节点 ──────────────────────────────────────────────
@@ -185,7 +189,10 @@ export function OutlineCanvas({
         setDragging(null);
         return;
       }
-      panStart.current = null;
+      if (panStart.current) {
+        panStart.current = null;
+        setIsPanning(false);
+      }
     };
     window.addEventListener('mousemove', onMove);
     window.addEventListener('mouseup', onUp);
@@ -420,6 +427,7 @@ export function OutlineCanvas({
     const target = e.target as SVGElement;
     if (target.tagName === 'svg' || target.tagName === 'rect' && target.getAttribute('data-bg')) {
       panStart.current = { mx: e.clientX, my: e.clientY, px: pan.x, py: pan.y };
+      setIsPanning(true);
     }
   };
 
@@ -435,7 +443,7 @@ export function OutlineCanvas({
           display: 'block',
           transform: `translate(${pan.x}px, ${pan.y}px)`,
           overflow: 'visible',
-          cursor: dragging ? 'grabbing' : panStart.current ? 'grabbing' : 'default',
+          cursor: dragging ? 'grabbing' : isPanning ? 'grabbing' : 'default',
         }}
         onMouseDown={onBgDown}
       >

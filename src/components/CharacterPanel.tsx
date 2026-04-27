@@ -336,7 +336,9 @@ export default function CharacterPanel({
 
   const handleRemoveAttr = async (key: string) => {
     if (!selected) return;
-    const { [key]: _, ...rest } = selected.attributes;
+    const rest = Object.fromEntries(
+      Object.entries(selected.attributes).filter(([attrKey]) => attrKey !== key),
+    );
     await addEntity(selected.name, 'character', selected.observations, rest, selected.tags);
     await loadGraph();
   };
@@ -351,7 +353,10 @@ export default function CharacterPanel({
 
   const handleRemoveObs = async (idx: number) => {
     if (!selected) return;
-    await addEntity(selected.name, 'character', selected.observations.filter((_, i) => i !== idx),
+    await addEntity(selected.name, 'character', [
+      ...selected.observations.slice(0, idx),
+      ...selected.observations.slice(idx + 1),
+    ],
       selected.attributes, selected.tags);
     await loadGraph();
   };

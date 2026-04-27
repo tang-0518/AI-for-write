@@ -1,8 +1,8 @@
+@import "tailwindcss";
+
 /* =============================================================
    index.css — 全局 CSS 变量 & Reset
    ============================================================= */
-
-@import url('https://fonts.googleapis.com/css2?family=Noto+Serif+SC:wght@400;500;700&family=Inter:wght@300;400;500;600&display=swap');
 
 :root {
   /* 背景层次 */

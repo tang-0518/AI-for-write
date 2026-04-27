@@ -1,5 +1,5 @@
 // =============================================================
-// hooks/useSnapshots.ts — 章节版本快照 Hook
+// hooks/useSnapshots.ts - 章节版本快照 Hook
 // =============================================================
 
 import { useState, useEffect, useCallback } from 'react';
@@ -12,26 +12,48 @@ export interface Snapshot {
   content: string;
   label: string;
   createdAt: number;
-  pinned?: boolean; // 标记为重要，免于自动清除
+  pinned?: boolean;
 }
 
 const MAX_SNAPSHOTS = 20;
 
 export function useSnapshots(draftId: string, bookId: string) {
   const [snapshots, setSnapshots] = useState<Snapshot[]>([]);
-  // 超限提示：返回给 UI 让用户决定如何处理
-  const [overLimitWarning, setOverLimitWarning] = useState(false);
+  const [warningRequested, setWarningRequested] = useState(false);
 
   useEffect(() => {
-    if (!draftId) { setSnapshots([]); return; }
-    kvGet<Snapshot[]>(`snapshots-${draftId}`)
-      .then(data => { if (data) setSnapshots(data); else setSnapshots([]); })
-      .catch(() => setSnapshots([]));
+    let cancelled = false;
+
+    const loadSnapshots = async () => {
+      if (!draftId) {
+        if (!cancelled) setSnapshots([]);
+        return;
+      }
+
+      try {
+        const data = await kvGet<Snapshot[]>(`snapshots-${draftId}`);
+        if (!cancelled) setSnapshots(data ?? []);
+      } catch {
+        if (!cancelled) setSnapshots([]);
+      }
+    };
+
+    void loadSnapshots();
+    return () => {
+      cancelled = true;
+    };
   }, [draftId]);
+
+  const allPinnedAndFull =
+    snapshots.length >= MAX_SNAPSHOTS &&
+    snapshots.length > 0 &&
+    snapshots.every(snapshot => snapshot.pinned);
+  const overLimitWarning = warningRequested && allPinnedAndFull;
 
   const saveSnapshot = useCallback(async (content: string, title: string, label: string) => {
     if (!draftId || !content.trim()) return;
-    const snap: Snapshot = {
+
+    const snapshot: Snapshot = {
       id: `snap_${Date.now()}_${Math.random().toString(36).slice(2, 5)}`,
       draftId,
       bookId,
@@ -39,25 +61,25 @@ export function useSnapshots(draftId: string, bookId: string) {
       label: `${label} — ${title}`,
       createdAt: Date.now(),
     };
+
     setSnapshots(prev => {
-      const unpinned = prev.filter(s => !s.pinned);
-      const pinned   = prev.filter(s => s.pinned);
-      const total    = prev.length + 1;
+      const unpinned = prev.filter(item => !item.pinned);
+      const pinned = prev.filter(item => item.pinned);
+      const total = prev.length + 1;
 
       let next: Snapshot[];
       if (total > MAX_SNAPSHOTS) {
         if (unpinned.length === 0) {
-          // 全部已标记为重要：提示用户，不静默删除
-          setOverLimitWarning(true);
+          setWarningRequested(true);
           return prev;
         }
-        // 自动清除最旧的未标记快照
         const trimmed = unpinned.slice(0, unpinned.length - 1);
-        next = [snap, ...pinned, ...trimmed];
+        next = [snapshot, ...pinned, ...trimmed];
       } else {
-        next = [snap, ...prev];
+        next = [snapshot, ...prev];
       }
 
+      setWarningRequested(false);
       kvSet(`snapshots-${draftId}`, next).catch(() => {});
       return next;
     });
@@ -65,22 +87,23 @@ export function useSnapshots(draftId: string, bookId: string) {
 
   const deleteSnapshot = useCallback(async (id: string) => {
     setSnapshots(prev => {
-      const next = prev.filter(s => s.id !== id);
+      const next = prev.filter(snapshot => snapshot.id !== id);
       kvSet(`snapshots-${draftId}`, next).catch(() => {});
       return next;
     });
   }, [draftId]);
 
-  // 切换重要标记
   const pinSnapshot = useCallback((id: string, pinned: boolean) => {
     setSnapshots(prev => {
-      const next = prev.map(s => s.id === id ? { ...s, pinned } : s);
+      const next = prev.map(snapshot => (
+        snapshot.id === id ? { ...snapshot, pinned } : snapshot
+      ));
       kvSet(`snapshots-${draftId}`, next).catch(() => {});
       return next;
     });
   }, [draftId]);
 
-  const dismissOverLimitWarning = useCallback(() => setOverLimitWarning(false), []);
+  const dismissOverLimitWarning = useCallback(() => setWarningRequested(false), []);
 
   return { snapshots, saveSnapshot, deleteSnapshot, pinSnapshot, overLimitWarning, dismissOverLimitWarning };
 }

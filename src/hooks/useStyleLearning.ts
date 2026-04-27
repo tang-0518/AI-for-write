@@ -23,7 +23,23 @@ export function useStyleLearning(settings: AppSettings) {
     } catch { /* 首次打开可能还没有 store，静默处理 */ }
   }, []);
 
-  useEffect(() => { void reload(); }, [reload]);
+  useEffect(() => {
+    let cancelled = false;
+    const loadProfiles = async () => {
+      try {
+        const all = await dbGetAll<StyleProfile>('style_profiles');
+        if (!cancelled) {
+          setProfiles(all.slice().sort((a, b) => b.analyzedAt - a.analyzedAt));
+        }
+      } catch {
+        // 棣栨鎵撳紑鍙兘杩樻病鏈?store锛岄潤榛樺鐞?
+      }
+    };
+    void loadProfiles();
+    return () => {
+      cancelled = true;
+    };
+  }, []);
 
   // ── 创建档案（分析 + 保存） ──────────────────────────────
   const createProfile = useCallback(async (params: {

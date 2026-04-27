@@ -29,13 +29,19 @@ interface Progress {
   entities: boolean;
   graph: boolean;
   snapshot: boolean;
+  tension: boolean;
+  chapterState: boolean;
+  weightUpdate: boolean;
 }
 
 const STEPS: Array<{ key: keyof Progress; label: string; emoji: string }> = [
-  { key: 'summary',  label: '生成章节摘要',   emoji: '📖' },
-  { key: 'entities', label: '提取角色与设定', emoji: '🧠' },
-  { key: 'graph',    label: '更新知识图谱',   emoji: '🕸️' },
-  { key: 'snapshot', label: '保存章节快照',   emoji: '💾' },
+  { key: 'summary',      label: '生成章节摘要',   emoji: '📖' },
+  { key: 'entities',     label: '提取角色与设定', emoji: '🧠' },
+  { key: 'graph',        label: '更新知识图谱',   emoji: '🕸️' },
+  { key: 'snapshot',     label: '保存章节快照',   emoji: '💾' },
+  { key: 'tension',      label: '张力评分',       emoji: '📊' },
+  { key: 'chapterState', label: '提取伏笔与时间线', emoji: '🪝' },
+  { key: 'weightUpdate', label: '更新关系权重',   emoji: '⚖️' },
 ];
 
 export function ChapterCompleteModal({
@@ -48,7 +54,15 @@ export function ChapterCompleteModal({
   onClose,
 }: ChapterCompleteModalProps) {
   const [status,   setStatus]   = useState<Status>('idle');
-  const [progress, setProgress] = useState<Progress>({ summary: false, entities: false, graph: false, snapshot: false });
+  const [progress, setProgress] = useState<Progress>({
+    summary: false,
+    entities: false,
+    graph: false,
+    snapshot: false,
+    tension: false,
+    chapterState: false,
+    weightUpdate: false,
+  });
   const [error,    setError]    = useState<string | null>(null);
   const [result,   setResult]   = useState<CompleteChapterResult | null>(null);
 
@@ -59,7 +73,15 @@ export function ChapterCompleteModal({
     setStatus('loading');
     setError(null);
     setResult(null);
-    setProgress({ summary: false, entities: false, graph: false, snapshot: false });
+    setProgress({
+      summary: false,
+      entities: false,
+      graph: false,
+      snapshot: false,
+      tension: false,
+      chapterState: false,
+      weightUpdate: false,
+    });
 
     const handleStepDone = (step: StepKey) => {
       setProgress(p => ({ ...p, [step]: true }));
@@ -196,6 +218,35 @@ export function ChapterCompleteModal({
                   {result.entities.length > 6 && (
                     <div className="cc-entities-more">…还有 {result.entities.length - 6} 条，在知识库中查看</div>
                   )}
+                </div>
+              )}
+
+              {result.tension && (
+                <div className="cc-tension">
+                  <div className="cc-tension-title">📊 章节张力评分</div>
+                  {(
+                    [
+                      { label: '情节张力', score: result.tension.plotTension,      note: result.tension.plotJustification },
+                      { label: '情绪张力', score: result.tension.emotionalTension, note: result.tension.emotionalJustification },
+                      { label: '节奏张力', score: result.tension.pacingTension,    note: result.tension.pacingJustification },
+                    ] as const
+                  ).map(({ label, score, note }) => (
+                    <div key={label} className="cc-tension-row">
+                      <span className="cc-tension-label">{label}</span>
+                      <div className="cc-tension-bar-wrap">
+                        <div
+                          className="cc-tension-bar"
+                          style={{
+                            width: `${score}%`,
+                            backgroundColor: score >= 70 ? '#34d399' : score >= 40 ? '#fbbf24' : '#ef4444',
+                          }}
+                        />
+                      </div>
+                      <span className="cc-tension-score">{score}</span>
+                      {note && <span className="cc-tension-note">{note}</span>}
+                    </div>
+                  ))}
+                  <div className="cc-tension-composite">综合：{result.tension.composite} / 100</div>
                 </div>
               )}
 

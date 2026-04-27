@@ -84,10 +84,12 @@ export async function readGraph(title: string): Promise<NovelGraph> {
       try {
         const obj = JSON.parse(trimmed) as GraphLine;
         if (obj.lineType === "entity") {
-          const { lineType: _, ...entity } = obj;
+          const { lineType, ...entity } = obj;
+          void lineType;
           graph.entities.push(entity as NovelEntity);
         } else if (obj.lineType === "relation") {
-          const { lineType: _, ...relation } = obj;
+          const { lineType, ...relation } = obj;
+          void lineType;
           graph.relations.push(relation as NovelRelation);
         }
       } catch {

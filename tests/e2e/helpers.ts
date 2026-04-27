@@ -79,15 +79,16 @@ export async function waitForApp(page: Page) {
 
   // 首次启动（resetAppState 清空数据后）会自动弹出"新建书目"对话框。
   // isFirst=true 时无取消按钮，必须创建一个测试书目才能关闭它。
-  try {
-    const createModal = page.locator('.create-book-modal');
-    if (await createModal.isVisible({ timeout: 2_000 })) {
-      await page.locator('input[placeholder="请输入书名…"]').fill('测试书目');
-      await page.locator('button.btn-primary', { hasText: '创建书目' }).click();
-      await page.waitForSelector('.create-book-modal', { state: 'hidden', timeout: 5_000 });
+  const createModal = page.locator('.create-book-modal');
+  const deadline = Date.now() + 15_000;
+  while (Date.now() < deadline) {
+    if (await createModal.isVisible().catch(() => false)) {
+      await createModal.locator('input[placeholder="请输入书名…"]').fill(`测试书目 ${Date.now()}`);
+      await createModal.locator('button.btn-primary', { hasText: '创建书目' }).click();
+      await createModal.waitFor({ state: 'hidden', timeout: 8_000 });
+      return;
     }
-  } catch {
-    // 无弹窗时直接继续
+    await page.waitForTimeout(250);
   }
 }
 

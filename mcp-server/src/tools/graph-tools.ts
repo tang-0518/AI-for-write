@@ -2,12 +2,10 @@ import {
   readGraph,
   upsertEntity,
   upsertRelations,
-  deleteEntity,
   searchEntities,
   getEntityNeighbors,
   getOpenPlotHooks,
   NovelEntityType,
-  NovelGraph,
 } from "../state/novel-graph.js";
 
 // ── 图谱查询：搜索节点 ────────────────────────────────────

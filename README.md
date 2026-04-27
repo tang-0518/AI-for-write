@@ -2,13 +2,14 @@
 
 > **不是让 AI 替你写，是让 AI 陪你写。**
 
-基于浏览器的 AI 长篇小说辅助创作工具。由 Google Gemini 2.5 驱动，**零后端，所有数据存在本地**，API Key 直连 Google，不经任何中转。
+基于浏览器的 AI 长篇小说辅助创作工具。当前保持**前端本地优先**的数据工作流，同时已经内置一个可独立运行的 `backend/` Python 后端（复刻自 PlotPilot）；核心续写、接续、润色、改写、解释，以及章节摘要 / 提取 / 大纲现已由这套后端承接。
 
-![Version](https://img.shields.io/badge/version-0.4.0-brightgreen)
+![Version](https://img.shields.io/badge/version-0.6.2-brightgreen)
 ![License](https://img.shields.io/badge/license-MIT-blue)
 ![Stack](https://img.shields.io/badge/stack-React%2019%20%2B%20TypeScript%20%2B%20Vite-blueviolet)
 ![AI](https://img.shields.io/badge/AI-Gemini%202.5-orange)
 ![Storage](https://img.shields.io/badge/storage-100%25%20local%20IndexedDB-green)
+![Backend](https://img.shields.io/badge/backend-FastAPI%20%2B%20Python-teal)
 
 ---
 
@@ -16,7 +17,7 @@
 
 你写几行，AI 接着写；你定方向，AI 帮你填细节。
 
-**AI for Write** 像一个记得所有剧情的搭档——它知道你的角色是谁，记得前面发生了什么，能看懂你的写作风格，在你卡壳的时候随时接上。稿子不上云，API Key 不过中转，一切在你本地运行。
+**AI for Write** 像一个记得所有剧情的搭档——它知道你的角色是谁，记得前面发生了什么，能看懂你的写作风格，在你卡壳的时候随时接上。现在既能保持本地写作体验，也已经具备向后端化架构演进的基础。
 
 ```
 你写：  "她踏入雨中，心跳加速，知道他正在注视着——"
@@ -28,7 +29,40 @@ AI 写：  [3 段张力十足的续写，匹配你的文风、角色设定与前
 
 ## 更新历史
 
-### v0.4.0（当前）
+### v0.6.2（当前）
+
+**本版本最大变化：章节完成 AI 也切到 Python backend/editor API。**
+
+| 模块 | 变更 |
+|------|------|
+| 🧠 **章节完成后端化** | `chapter-summary / chapter-extract-all / chapter-extract-entities / outline` 统一改走 `backend/interfaces/api/v1/engine/editor_routes.py` |
+| 🔁 **前端 API 兼容** | `src/api/gemini.ts` 保留原有函数出口，`useChapterComplete.ts`、`completeChapter.ts`、`useOutline.ts` 不需要重写 |
+| 🧱 **Python 分析服务** | 新增 `chapter_generation_service.py`，在后端负责章节摘要、记忆/图谱提取、实体过滤与大纲生成 |
+| ✅ **逐步验证通过** | `python -m compileall ...`、路由导入校验、`npm run build` 全部通过 |
+
+### v0.6.1
+
+**本版本最大变化：前端核心编辑器 AI 全部切到 Python backend/editor API。**
+
+| 模块 | 变更 |
+|------|------|
+| ✍️ **核心续写后端化** | `continue / resume / polish / rewrite / explain` 统一改走 `backend/interfaces/api/v1/engine/editor_routes.py` |
+| 🔁 **前端调用兼容** | `src/api/gemini.ts` 保留原有导出签名，`useEditor.ts` 和现有 UI 不需要重写 |
+| 🧱 **Python Prompt 承接** | 新增 `editor_generation_service.py`，在后端完成续写、润色、改写、解释 prompt 组装 |
+| 🛠 **构建链修复** | `vite.config.ts` 兼容链接工作区真实路径，`npm run build` 可通过 |
+
+### v0.6.0
+
+**本版本最大变化：并入 PlotPilot 风格 Python 后端，为服务化改造打基础。**
+
+| 模块 | 变更 |
+|------|------|
+| 🐍 **Python 后端并仓** | 新增 `backend/`，迁入 PlotPilot 的 `application / domain / infrastructure / interfaces` DDD 四层 |
+| 🚀 **FastAPI 入口** | 保留 `interfaces.main:app` 与 `/health`、`/docs` 等后端入口，支持独立运行 |
+| 🧰 **后端启动脚本** | 新增 `backend/start.ps1`，根目录 `dev-start.ps1` 可选拉起 Python 后端 |
+| 📚 **工程文档同步** | 更新 `PLAN.md`、`ARCHITECTURE.md`、README，明确当前仓库已进入前端 + 后端双轨演进 |
+
+### v0.4.0
 
 **本版本最大变化：知识图谱完全内置，不再依赖外部 MCP Server。**
 
@@ -105,7 +139,7 @@ AI 写：  [3 段张力十足的续写，匹配你的文风、角色设定与前
 - 大纲画布，AI 生成章节建议
 
 ### 隐私优先
-- **零后端** — 无服务器、无中转、无埋点
+- **本地优先** — 书籍、章节、记忆、图谱仍存于浏览器本地；核心 AI 编辑请求通过本地 Python 后端转发
 - API Key 仅存于 `localStorage`，直接发往 Google API
 - 所有稿件数据存于本地 IndexedDB
 
@@ -128,6 +162,22 @@ npm run dev
 
 打开 `http://localhost:5173` → 设置中粘贴 API Key → 开始写作。
 
+### 启动 Python 后端（推荐，核心 AI 功能必需）
+
+```powershell
+cd backend
+python -m venv .venv
+.venv\Scripts\pip install -r requirements.txt
+Copy-Item .env.example .env
+.venv\Scripts\python -m uvicorn interfaces.main:app --host 127.0.0.1 --port 8005 --reload
+```
+
+启动后可访问：
+
+- `http://127.0.0.1:8005`
+- `http://127.0.0.1:8005/docs`
+- `http://127.0.0.1:8005/health`
+
 ### 静态部署（免费）
 
 ```bash
@@ -143,6 +193,7 @@ npm run build
 # .env.local（不会提交到 git）
 VITE_GEMINI_API_KEY=your_key_here
 VITE_GEMINI_MODEL=gemini-2.5-pro
+VITE_PY_BACKEND_URL=http://127.0.0.1:8005
 ```
 
 ---
@@ -170,8 +221,9 @@ VITE_GEMINI_MODEL=gemini-2.5-pro
 |----|------|
 | 前端框架 | React 19 + TypeScript |
 | 构建工具 | Vite |
-| AI 模型 | Google Gemini API（SSE 流式） |
+| AI 模型 | Google Gemini API（由前端或本地 Python 后端转发） |
 | 本地存储 | IndexedDB（v6，8 个 object store） |
+| 可选后端 | Python 3.12 + FastAPI（`backend/`，承接续写与章节完成 AI） |
 | 样式 | 纯 CSS，深色主题，5 套主题配色 |
 
 ---

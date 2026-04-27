@@ -45,6 +45,7 @@ import { STYLE_CONFIGS, LENGTH_CONFIGS, CREATIVITY_CONFIGS } from '../types';
 import { estimateTokens, getCache, makeCacheKey, setCache } from './cache';
 
 const API_BASE = 'https://generativelanguage.googleapis.com/v1beta/models';
+const PY_BACKEND_BASE = (import.meta.env.VITE_PY_BACKEND_URL ?? 'http://127.0.0.1:8005').replace(/\/+$/, '');
 const CONTEXT_TAIL_CHARS = 2200;
 // 单次润色文字字符数上限；超过此值按段落分块
 const POLISH_CHUNK_CHARS = 2000;
@@ -80,6 +81,11 @@ export function withNoThinking(
   return config;
 }
 
+function getWriteMaxOutputTokens(settings: AppSettings): number {
+  const requested = LENGTH_CONFIGS[settings.writeLength ?? 'medium'].tokens;
+  return Math.min(requested, getModelMaxOutputTokens(settings.model));
+}
+
 const staticPromptCache = new Map<string, string>();
 
 /** 续写/接着写命中 MAX_TOKENS 时在 generator 内部 yield 的哨兵值（非用户可见文本） */
@@ -105,6 +111,65 @@ async function toFriendlyError(response: Response): Promise<Error> {
 }
 
 // 公共 JSON 请求辅助，避免重复 fetch 样板
+async function fetchWithBackendError(input: string, init: RequestInit): Promise<Response> {
+  try {
+    return await fetch(input, init);
+  } catch (error) {
+    if (error instanceof Error && error.name === 'AbortError') throw error;
+    throw new Error('Python backend is unavailable. Please start backend/start.ps1 first.');
+  }
+}
+
+function inferProviderFromModel(model: string): 'gemini' | 'openai' | 'anthropic' {
+  const lowered = model.toLowerCase();
+  if (lowered.includes('gemini')) return 'gemini';
+  if (lowered.startsWith('claude')) return 'anthropic';
+  return 'openai';
+}
+
+function buildEditorProviderPayload(settings: AppSettings) {
+  return {
+    api_key: settings.apiKey,
+    model: settings.model,
+    provider: inferProviderFromModel(settings.model),
+  };
+}
+
+function buildEditorBackendConfig(settings: AppSettings) {
+  return {
+    ...buildEditorProviderPayload(settings),
+    style: settings.style,
+    custom_prompt: settings.customPrompt ?? '',
+    creativity: settings.creativity ?? 'balanced',
+    write_length: settings.writeLength ?? 'medium',
+  };
+}
+
+async function postEditorJson<T>(
+  path: string,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<T> {
+  const response = await fetchWithBackendError(`${PY_BACKEND_BASE}${path}`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify(payload),
+  });
+
+  if (!response.ok) throw await toFriendlyError(response);
+  return await response.json() as T;
+}
+
+async function postEditorText(
+  path: string,
+  payload: Record<string, unknown>,
+  signal?: AbortSignal,
+): Promise<string> {
+  const data = await postEditorJson<{ text?: string }>(path, payload, signal);
+  return data.text ?? '';
+}
+
 interface GeminiRequestConfig {
   temperature: number;
   maxOutputTokens: number;
@@ -396,6 +461,17 @@ async function* parseGeminiSSEStream(
         try {
           // eslint-disable-next-line @typescript-eslint/no-explicit-any
           const data = JSON.parse(jsonStr) as Record<string, any>;
+          if (data?.type === 'chunk') {
+            yield { text: data.text as string | undefined };
+            continue;
+          }
+          if (data?.type === 'truncated') {
+            yield { finishReason: 'MAX_TOKENS' };
+            continue;
+          }
+          if (data?.type === 'error') {
+            throw new Error((data.message as string | undefined) ?? 'Python backend stream failed');
+          }
           const candidate = data?.candidates?.[0];
           yield {
             text: candidate?.content?.parts?.[0]?.text as string | undefined,
@@ -485,6 +561,33 @@ export async function* streamContinue(
     return;
   }
 
+  const backendResponse = await fetchWithBackendError(`${PY_BACKEND_BASE}/api/v1/editor/continue-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify({
+      ...buildEditorBackendConfig(settings),
+      content: text,
+      one_time_prompt: oneTimePrompt,
+      memory_context: memoryContext,
+      prev_chapter_tail: prevChapterTail,
+      style_block: styleBlock ?? '',
+      version_angle: versionAngle ?? null,
+      temperature_override: (settings as AppSettings & { _tempOverride?: number })._tempOverride ?? null,
+    }),
+  });
+
+  if (!backendResponse.ok) {
+    throw await toFriendlyError(backendResponse);
+  }
+
+  for await (const chunk of parseGeminiSSEStream(backendResponse, signal)) {
+    const textChunk = chunk.text;
+    if (textChunk) yield textChunk;
+    if (chunk.finishReason === 'MAX_TOKENS') yield TRUNCATION_SENTINEL;
+  }
+  return;
+
   const url = `${API_BASE}/${model}:streamGenerateContent?key=${apiKey}&alt=sse`;
 
   const response = await fetch(url, {
@@ -496,7 +599,7 @@ export async function* streamContinue(
       contents: [{ role: 'user', parts: [{ text: userMessage }] }],
       generationConfig: withNoThinking(model, {
         temperature: (settings as AppSettings & { _tempOverride?: number })._tempOverride ?? getTemperature(settings.creativity),
-        maxOutputTokens: LENGTH_CONFIGS[settings.writeLength ?? 'medium'].tokens,
+        maxOutputTokens: getWriteMaxOutputTokens(settings),
       }),
       safetySettings: [
         { category: 'HARM_CATEGORY_HARASSMENT', threshold: 'BLOCK_NONE' },
@@ -516,8 +619,9 @@ export async function* streamContinue(
 
   for await (const chunk of parseGeminiSSEStream(response, signal)) {
     if (chunk.text) {
-      fullText += chunk.text;
-      yield chunk.text;
+      const textChunk = chunk.text as string;
+      fullText += textChunk;
+      yield textChunk;
     }
     if (chunk.finishReason === 'MAX_TOKENS') {
       isMaxTokensStop = true;
@@ -543,6 +647,27 @@ export async function* streamResume(
   signal?: AbortSignal,
 ): AsyncGenerator<string> {
   const { apiKey, model } = settings;
+  const backendResponse = await fetchWithBackendError(`${PY_BACKEND_BASE}/api/v1/editor/resume-stream`, {
+    method: 'POST',
+    headers: { 'Content-Type': 'application/json' },
+    signal,
+    body: JSON.stringify({
+      ...buildEditorProviderPayload(settings),
+      creativity: settings.creativity ?? 'balanced',
+      write_length: settings.writeLength ?? 'medium',
+      original_text: originalText,
+      truncated_part: truncatedPart,
+    }),
+  });
+  if (!backendResponse.ok) throw await toFriendlyError(backendResponse);
+
+  for await (const chunk of parseGeminiSSEStream(backendResponse, signal)) {
+    const textChunk = chunk.text;
+    if (textChunk) yield textChunk;
+    if (chunk.finishReason === 'MAX_TOKENS') yield TRUNCATION_SENTINEL;
+  }
+  return;
+
   const tail = (originalText + truncatedPart).slice(-1800);
   const prompt = `你正在续写一篇小说，上一次输出因达到字数上限而中断。请从中断处继续，无缝衔接，不要重复已有内容，不要解释或说明，直接续写正文。
 
@@ -571,7 +696,8 @@ ${tail}`;
   if (!response.ok) throw await toFriendlyError(response);
 
   for await (const chunk of parseGeminiSSEStream(response, signal)) {
-    if (chunk.text) yield chunk.text;
+    const textChunk = chunk.text as string | undefined;
+    if (textChunk) yield textChunk as string;
     if (chunk.finishReason === 'MAX_TOKENS') yield TRUNCATION_SENTINEL;
   }
 }
@@ -636,6 +762,16 @@ export async function generateOutline(
   existingChapterCount: number,
   settings: AppSettings,
 ): Promise<Array<{ title: string; synopsis: string }>> {
+  if (!settings.apiKey) throw new Error('Please set API Key in settings first');
+  return await postEditorJson<Array<{ title: string; synopsis: string }>>(
+    '/api/v1/editor/outline',
+    {
+      ...buildEditorProviderPayload(settings),
+      synopsis,
+      existing_chapter_count: existingChapterCount,
+    },
+  );
+
   const { apiKey, model } = settings;
   const prompt = `你是一位资深中文小说策划编辑。根据以下作品简介，为小说规划后续章节大纲。
 
@@ -662,6 +798,18 @@ async function polishChunk(
   signal?: AbortSignal,
   mode: PolishMode = 'standard',
 ): Promise<string> {
+  return await postEditorText(
+    '/api/v1/editor/polish',
+    {
+      ...buildEditorBackendConfig(settings),
+      text: chunk,
+      one_time_prompt: oneTimePrompt,
+      memory_context: memoryContext,
+      mode,
+    },
+    signal,
+  );
+
   const { apiKey, style, model } = settings;
   const systemText = buildPolishSystemInstruction(style, settings.customPrompt ?? '', mode);
   const userMessage = buildPolishDynamicBlock(chunk, oneTimePrompt, memoryContext, mode);
@@ -798,6 +946,34 @@ export interface ExtractedMemoryItem {
   content: string;
 }
 
+export interface ExtractedChapterData {
+  memories: ExtractedMemoryItem[];
+  graphEntities: Array<{
+    name: string;
+    type: string;
+    attributes?: Record<string, string>;
+    observations?: string[];
+    tags?: string[];
+  }>;
+  graphRelations: Array<{
+    from: string;
+    to: string;
+    relationType: string;
+    weight?: number;
+    notes?: string;
+  }>;
+}
+
+const VALID_GRAPH_ENTITY_TYPES = new Set([
+  'character',
+  'location',
+  'event',
+  'item',
+  'faction',
+  'world_rule',
+  'plot_hook',
+]);
+
 export async function extractEntitiesFromAccepted(
   newText: string,
   settings: AppSettings,
@@ -840,6 +1016,17 @@ export async function generateChapterSummary(
   content: string,
   settings: AppSettings,
 ): Promise<string> {
+  if (!settings.apiKey) throw new Error('Please set API Key in settings first');
+  if (content.trim().length < 100) throw new Error('Chapter content is too short (minimum 100 characters)');
+  return await postEditorText(
+    '/api/v1/editor/chapter-summary',
+    {
+      ...buildEditorProviderPayload(settings),
+      chapter_title: chapterTitle,
+      content,
+    },
+  );
+
   if (!settings.apiKey) throw new Error('请先在设置中填写 API Key');
   if (content.trim().length < 100) throw new Error('章节内容过短（需至少 100 字）');
 
@@ -865,11 +1052,73 @@ ${content.slice(0, 5000)}`;
  * 章节完成时从全章内容提取/更新角色档案和世界设定。
  * 返回提取到的条目列表（可能为空数组，但不会静默吞掉 API 错误）。
  */
+export async function extractChapterAll(
+  chapterTitle: string,
+  content: string,
+  settings: AppSettings,
+  knownEntityNames: string[] = [],
+): Promise<ExtractedChapterData> {
+  if (!settings.apiKey) throw new Error('Please set API Key in settings first');
+  if (content.trim().length < 100) {
+    return { memories: [], graphEntities: [], graphRelations: [] };
+  }
+
+  const backendData = await postEditorJson<ExtractedChapterData>(
+    '/api/v1/editor/chapter-extract-all',
+    {
+      ...buildEditorProviderPayload(settings),
+      chapter_title: chapterTitle,
+      content,
+      known_entity_names: knownEntityNames,
+    },
+  );
+
+  return {
+    memories: (backendData.memories ?? []).filter(
+      item => (item.type === 'character' || item.type === 'world_rule')
+        && typeof item.name === 'string'
+        && item.name.trim()
+        && typeof item.content === 'string'
+        && item.content.trim(),
+    ),
+    graphEntities: (backendData.graphEntities ?? []).filter(
+      entity => typeof entity.name === 'string'
+        && entity.name.trim()
+        && typeof entity.type === 'string'
+        && VALID_GRAPH_ENTITY_TYPES.has(entity.type),
+    ),
+    graphRelations: (backendData.graphRelations ?? []).filter(
+      relation => typeof relation.from === 'string'
+        && relation.from.trim()
+        && typeof relation.to === 'string'
+        && relation.to.trim()
+        && typeof relation.relationType === 'string'
+        && relation.relationType.trim(),
+    ),
+  };
+}
+
 export async function extractChapterEntities(
   chapterTitle: string,
   content: string,
   settings: AppSettings,
 ): Promise<ExtractedMemoryItem[]> {
+  if (!settings.apiKey) throw new Error('Please set API Key in settings first');
+  if (content.trim().length < 100) return [];
+
+  return (await postEditorJson<ExtractedMemoryItem[]>(
+    '/api/v1/editor/chapter-extract-entities',
+    {
+      ...buildEditorProviderPayload(settings),
+      chapter_title: chapterTitle,
+      content,
+    },
+  )).filter(
+    item => (item.type === 'character' || item.type === 'world_rule')
+      && typeof item.name === 'string' && item.name.trim()
+      && typeof item.content === 'string' && item.content.trim(),
+  );
+
   if (!settings.apiKey) throw new Error('请先在设置中填写 API Key');
   if (content.trim().length < 100) return []; // 内容过短直接返回空，不算错误
 
@@ -922,4 +1171,48 @@ ${currentSynopsis ? `当前梗概（可参考扩写）：${currentSynopsis}` : '
     maxOutputTokens: 250,
   });
   return result.trim();
+}
+
+export type RewriteAngle = 'narrative' | 'psychological' | 'dialogue';
+
+export const REWRITE_ANGLE_META: Record<RewriteAngle, { label: string; instruction: string }> = {
+  narrative: { label: '????', instruction: '????????????????????????????' },
+  psychological: { label: '????', instruction: '??????????????????????????' },
+  dialogue: { label: '???', instruction: '????????????????????????????' },
+};
+
+export async function rewriteParagraph(
+  text: string,
+  angle: RewriteAngle,
+  settings: AppSettings,
+  memoryContext = '',
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!settings.apiKey || !text.trim()) return '';
+  return await postEditorText(
+    '/api/v1/editor/rewrite',
+    {
+      ...buildEditorProviderPayload(settings),
+      text,
+      angle,
+      memory_context: memoryContext,
+    },
+    signal,
+  );
+}
+
+export async function explainText(
+  text: string,
+  settings: AppSettings,
+  signal?: AbortSignal,
+): Promise<string> {
+  if (!settings.apiKey || !text.trim()) return '';
+  return await postEditorText(
+    '/api/v1/editor/explain',
+    {
+      ...buildEditorProviderPayload(settings),
+      text,
+    },
+    signal,
+  );
 }

@@ -16,12 +16,30 @@ export function usePlotHooks(bookId: string | undefined) {
 
   // 加载当前书目的情节钩子
   useEffect(() => {
-    if (!bookId) { setHooks([]); setLoaded(true); return; }
-    setLoaded(false);
-    dbGetAll<PlotHook>('plot_hooks').then(all => {
-      setHooks(all.filter(h => h.bookId === bookId).sort((a, b) => b.createdAt - a.createdAt));
-      setLoaded(true);
-    }).catch(() => setLoaded(true));
+    let cancelled = false;
+    const loadHooks = async () => {
+      if (!bookId) {
+        if (!cancelled) {
+          setHooks([]);
+          setLoaded(true);
+        }
+        return;
+      }
+      if (!cancelled) setLoaded(false);
+      try {
+        const all = await dbGetAll<PlotHook>('plot_hooks');
+        if (!cancelled) {
+          setHooks(all.filter(h => h.bookId === bookId).sort((a, b) => b.createdAt - a.createdAt));
+          setLoaded(true);
+        }
+      } catch {
+        if (!cancelled) setLoaded(true);
+      }
+    };
+    void loadHooks();
+    return () => {
+      cancelled = true;
+    };
   }, [bookId]);
 
   const add = useCallback(async (input: CreateInput): Promise<void> => {

@@ -3,38 +3,20 @@
 // 业务逻辑已下沉到各专用 Hook，此处仅负责组装和渲染。
 // =============================================================
 
-import { useState, useEffect, useCallback, useReducer, useRef, useMemo, lazy, Suspense } from 'react';
+import { useState, useEffect, useCallback, useRef, useMemo } from 'react';
 import { Toolbar }              from './components/Toolbar';
 import { Editor }               from './components/Editor';
 import { AiSuggestionPanel }    from './components/AiSuggestionPanel';
 import { StatusBar }            from './components/StatusBar';
-import { Sidebar }              from './components/Sidebar';
 import { InstructionBar }       from './components/InstructionBar';
 import { CommandBar }           from './components/CommandBar';
 import { FindReplace }          from './components/FindReplace';
-
-// ── 懒加载面板组件（仅在用户打开时加载） ────────────────────────
-const SettingsModal        = lazy(() => import('./components/SettingsModal'));
-const MemoryPanel          = lazy(() => import('./components/MemoryPanel'));
-const CreateBookModal      = lazy(() => import('./components/CreateBookModal'));
-const ChapterCompleteModal = lazy(() => import('./components/ChapterCompleteModal'));
-const SnapshotPanel        = lazy(() => import('./components/SnapshotPanel'));
-const VersionPickerPanel   = lazy(() => import('./components/VersionPickerPanel'));
-const ConsistencyPanel     = lazy(() => import('./components/ConsistencyPanel'));
-const CrossChapterSearch   = lazy(() => import('./components/CrossChapterSearch'));
-const OutlinePanel         = lazy(() => import('./components/OutlinePanel'));
-const SceneTemplates       = lazy(() => import('./components/SceneTemplates'));
-const StyleLearningPanel   = lazy(() => import('./components/StyleLearningPanel'));
-const ShortcutHelpPanel    = lazy(() => import('./components/ShortcutHelpPanel'));
-const StatsPanel           = lazy(() => import('./components/StatsPanel'));
-const PlotHooksPanel       = lazy(() => import('./components/PlotHooksPanel'));
-const AiDetectionPanel     = lazy(() => import('./components/AiDetectionPanel'));
-const CapsulePanel         = lazy(() => import('./components/CapsulePanel'));
-const CharacterPanel       = lazy(() => import('./components/CharacterPanel'));
-const MemorySidebar        = lazy(() => import('./components/MemorySidebar'));
+import { InlineAiMenu }         from './components/InlineAiMenu';
+import { LeftSidebar }          from './components/layout/LeftSidebar';
+import { RightSidebar }         from './components/layout/RightSidebar';
+import { GlobalModals }         from './components/layout/GlobalModals';
 
 import { useWritingStats }      from './hooks/useWritingStats';
-import { usePlotHooks }         from './hooks/usePlotHooks';
 import { useStorage }           from './hooks/useStorage';
 import { useEditor }            from './hooks/useEditor';
 import { useBooks }             from './hooks/useBooks';
@@ -48,95 +30,37 @@ import { useStyleLearning }     from './hooks/useStyleLearning';
 import { useCapsules }          from './hooks/useCapsules';
 import { useOnlineStatus }      from './hooks/useOnlineStatus';
 import type { Draft }           from './hooks/useBooks';
-import { checkConsistency, generateOutline, extractEntitiesFromAccepted } from './api/gemini';
+import { checkConsistency, generateOutline, extractEntitiesFromAccepted, explainText } from './api/gemini';
 import type { ConsistencyIssue } from './api/gemini';
 import type { OutlineCard }     from './hooks/useOutline';
 import { DEFAULT_SETTINGS } from './types';
 import type { AppSettings, PolishMode } from './types';
 import { migrateSettings }      from './utils/settingsMigration';
+import { formatNovelText }      from './utils/formatNovelText';
 import { getCacheStats }        from './api/cache';
 import { migrateFromLocalStorage } from './db/index';
 import { formatStyleForPrompt }    from './api/styleAnalysis';
 import { PREV_CHAPTER_TAIL_CHARS } from './config/constants';
+import { usePanelStore } from './store/panelStore';
+import { useNovelStore } from './store/useNovelStore';
 import './App.css';
-
-// ── 面板状态 useReducer ────────────────────────────────────────
-type PanelType =
-  | 'settings' | 'memory' | 'snapshot' | 'consistency'
-  | 'crossSearch' | 'outline' | 'sceneTemplates' | 'shortcutHelp'
-  | 'stats' | 'styleLearning' | 'plotHooks' | 'aiDetect'
-  | 'createBook' | null;
-
-interface PanelState {
-  openPanel: PanelType;
-  findMode: 'find' | 'replace' | null;
-  showInstruction: boolean;
-}
-
-type PanelAction =
-  | { type: 'OPEN_PANEL'; panel: Exclude<PanelType, null> }
-  | { type: 'CLOSE_PANEL' }
-  | { type: 'TOGGLE_FIND'; mode: 'find' | 'replace' }
-  | { type: 'CLOSE_FIND' }
-  | { type: 'TOGGLE_INSTRUCTION' };
-
-function panelReducer(state: PanelState, action: PanelAction): PanelState {
-  switch (action.type) {
-    case 'OPEN_PANEL':
-      return { ...state, openPanel: action.panel };
-    case 'CLOSE_PANEL':
-      return { ...state, openPanel: null };
-    case 'TOGGLE_FIND':
-      return { ...state, findMode: state.findMode === action.mode ? null : action.mode };
-    case 'CLOSE_FIND':
-      return { ...state, findMode: null };
-    case 'TOGGLE_INSTRUCTION':
-      return { ...state, showInstruction: !state.showInstruction };
-    default:
-      return state;
-  }
-}
-
-const INITIAL_PANEL_STATE: PanelState = {
-  openPanel: null,
-  findMode: null,
-  showInstruction: false,
-};
-
-// 懒加载 fallback
-const LazyFallback = () => <div className="panel-lazy-loading">加载中…</div>;
-
-// 按中文句末标点拆分长段落，保留标点在句尾
-function splitBySentenceEnd(text: string): string[] {
-  const result: string[] = [];
-  let current = '';
-  for (let i = 0; i < text.length; i++) {
-    current += text[i];
-    if ('。！？'.includes(text[i])) {
-      // 右引号/右括号紧跟句末标点时一并归入本句
-      const next = text[i + 1] ?? '';
-      if ('」』"）)'.includes(next)) {
-        current += next;
-        i++;
-      }
-      result.push(current.trim());
-      current = '';
-    }
-  }
-  if (current.trim()) result.push(current.trim());
-  // 若拆出的句子少于2个，说明无句末标点，整段作为一个段落
-  return result.length >= 2 ? result : [text];
-}
 
 function App() {
   const [rawSettings, setSettings] = useStorage<AppSettings>('novel-ai-settings', DEFAULT_SETTINGS);
   const settings: AppSettings = useMemo(() => migrateSettings({ ...rawSettings }), [rawSettings]);
   const { theme, setTheme, THEMES } = useTheme();
   const isOnline = useOnlineStatus();
+  const storeTheme = useNovelStore((state) => state.theme);
 
-  // ── UI 状态（useReducer 管理互斥面板） ──────────────────────
-  const [panelState, dispatch] = useReducer(panelReducer, INITIAL_PANEL_STATE);
-  const { openPanel, findMode, showInstruction } = panelState;
+  // Global panel state lives in Zustand so layout children can open/close panels directly.
+  const openPanel = usePanelStore((state) => state.openPanel);
+  const findMode = usePanelStore((state) => state.findMode);
+  const showInstruction = usePanelStore((state) => state.showInstruction);
+  const openPanelAction = usePanelStore((state) => state.openPanel_action);
+  const closePanel = usePanelStore((state) => state.closePanel);
+  const toggleFind = usePanelStore((state) => state.toggleFind);
+  const closeFind = usePanelStore((state) => state.closeFind);
+  const toggleInstruction = usePanelStore((state) => state.toggleInstruction);
 
   const [findFocusRange, setFindFocusRange]   = useState<{ start: number; end: number } | null>(null);
   const [editingChapterTitle, setEditingChapterTitle] = useState(false);
@@ -145,10 +69,8 @@ function App() {
   const [isCheckingConsistency, setIsCheckingConsistency] = useState(false);
   const [consistencyError, setConsistencyError] = useState<string | null>(null);
   const [isGeneratingOutline, setIsGeneratingOutline] = useState(false);
-  const [showCapsule,        setShowCapsule]        = useState(false);
   const [manualSavedAt,      setManualSavedAt]      = useState<number | null>(null);
   const [capsuleHighlight,   setCapsuleHighlight]   = useState<string | undefined>();
-  const [characterHighlight, setCharacterHighlight] = useState<string | undefined>();
   const [synopsisVisible, setSynopsisVisible] = useState(true);
   const [completedChapterIdsArr, setCompletedChapterIdsArr] = useStorage<string[]>('novel-completed-chapters', []);
   const completedChapterIds = new Set(completedChapterIdsArr);
@@ -173,8 +95,7 @@ function App() {
     add: addMemory, update: updateMemory, remove: removeMemory,
     upsertExtracted, refresh: refreshMemory,
     memoryContext, buildContextForQuery,
-    bundleSnapshot,
-  } = useMemory(activeBookId, activeBook?.title);
+  } = useMemory(activeBookId);
 
   // ── 文风学习 ─────────────────────────────────────────────
   const {
@@ -199,8 +120,8 @@ function App() {
   }, []);
 
   useEffect(() => {
-    if (booksLoaded && memoriesLoaded && books.length === 0) dispatch({ type: 'OPEN_PANEL', panel: 'createBook' });
-  }, [booksLoaded, memoriesLoaded, books.length]);
+    if (booksLoaded && memoriesLoaded && books.length === 0) openPanelAction('createBook');
+  }, [booksLoaded, memoriesLoaded, books.length, openPanelAction]);
 
   // ── 胶囊场景函数稳定引用（先声明 ref，useCapsules 在后面初始化后更新）────
   // 使用 ref 桥接避免 useCapsules 必须在 useEditor 之前调用的问题
@@ -219,7 +140,7 @@ function App() {
   const {
     state, setContent, setSelectionRange,
     continueWriting, acceptContinuation, rejectContinuation, resumeWriting,
-    polish, acceptPolish, rejectPolish,
+    polish, rewriteSelection, acceptPolish, rejectPolish,
     generateVersions, selectVersion, dismissVersions,
     clear, undoClear, insertAtCursor, resetBlocks, resetPendingState,
   } = useEditor(
@@ -233,6 +154,26 @@ function App() {
     activeStyleBlock,
     buildSceneContextStable,
   );
+
+  const currentDraftContent = activeDraft?.id === activeDraftId
+    ? state.content
+    : (activeDraft?.content ?? '');
+
+  const chapterCompleteDraft = useMemo(
+    () => (activeDraft ? { ...activeDraft, content: currentDraftContent } : null),
+    [activeDraft, currentDraftContent],
+  );
+
+  const buildSyncedChapters = useCallback((): Draft[] => {
+    if (!activeDraftId) return chapters;
+
+    const updatedAt = Date.now();
+    return chapters.map(chapter => (
+      chapter.id === activeDraftId
+        ? { ...chapter, content: state.content, updatedAt }
+        : chapter
+    ));
+  }, [activeDraftId, chapters, state.content]);
 
   // 章节���换时同步编辑器内容
   useEffect(() => {
@@ -254,14 +195,18 @@ function App() {
   });
 
   useKeyboardShortcuts({
-    onFind:         () => dispatch({ type: 'TOGGLE_FIND', mode: 'find' }),
-    onReplace:      () => dispatch({ type: 'TOGGLE_FIND', mode: 'replace' }),
-    onCrossSearch:  () => dispatch(openPanel === 'crossSearch' ? { type: 'CLOSE_PANEL' } : { type: 'OPEN_PANEL', panel: 'crossSearch' }),
+    onFind:         () => toggleFind('find'),
+    onReplace:      () => toggleFind('replace'),
+    onCrossSearch:  () => { if (openPanel === 'crossSearch') closePanel(); else openPanelAction('crossSearch'); },
     onFontIncrease: () => setSettings(s => ({ ...s, editorFontSize: Math.min(26, (s.editorFontSize ?? 17) + 1) })),
     onFontDecrease: () => setSettings(s => ({ ...s, editorFontSize: Math.max(12, (s.editorFontSize ?? 17) - 1) })),
-    onHelp:         () => dispatch(openPanel === 'shortcutHelp' ? { type: 'CLOSE_PANEL' } : { type: 'OPEN_PANEL', panel: 'shortcutHelp' }),
-    onEscape:       () => { if (openPanel) dispatch({ type: 'CLOSE_PANEL' }); else if (findMode) dispatch({ type: 'CLOSE_FIND' }); else if (showInstruction) dispatch({ type: 'TOGGLE_INSTRUCTION' }); },
-    onSave:         () => { flushAll(chapters); setManualSavedAt(Date.now()); },
+    onHelp:         () => { if (openPanel === 'shortcutHelp') closePanel(); else openPanelAction('shortcutHelp'); },
+    onEscape:       () => { if (openPanel) closePanel(); else if (findMode) closeFind(); else if (showInstruction) toggleInstruction(); },
+    onSave:         () => {
+      if (activeDraftId) updateContent(activeDraftId, state.content);
+      void flushAll(buildSyncedChapters());
+      setManualSavedAt(Date.now());
+    },
   });
 
   const { snapshots, saveSnapshot, deleteSnapshot, pinSnapshot, overLimitWarning, dismissOverLimitWarning } = useSnapshots(
@@ -270,21 +215,39 @@ function App() {
   );
 
   const outline = useOutline(activeBookId);
+  const currentOutlineCard = useMemo(
+    () => (activeDraft ? outline.cards.find(card => card.order === activeDraft.order) ?? null : null),
+    [activeDraft, outline.cards],
+  );
 
   const allChaptersTotalWords = bookChapters(activeBookId).reduce((s, c) => s + c.content.replace(/\s/g, '').length, 0);
-  const { stats: writingStats, recordAiAccepted, recordAiRejected } = useWritingStats(allChaptersTotalWords);
+  const { stats: writingStats, recordWords, recordAiAccepted, recordAiRejected } = useWritingStats(allChaptersTotalWords);
+  const statsBookIdRef = useRef('');
+  const prevTrackedWordsRef = useRef<number | null>(null);
 
-  // ── 情节钩子 ─────────────────────────────────────────────
-  const {
-    hooks: plotHooks,
-    urgentCount: plotHooksUrgent,
-    add: addPlotHook,
-    update: updatePlotHook,
-    remove: removePlotHook,
-    resolve: resolvePlotHook,
-    defer: deferPlotHook,
-    reopen: reopenPlotHook,
-  } = usePlotHooks(activeBookId);
+  useEffect(() => {
+    if (!activeBookId) {
+      statsBookIdRef.current = '';
+      prevTrackedWordsRef.current = allChaptersTotalWords;
+      return;
+    }
+
+    if (statsBookIdRef.current !== activeBookId) {
+      statsBookIdRef.current = activeBookId;
+      prevTrackedWordsRef.current = allChaptersTotalWords;
+      return;
+    }
+
+    if (prevTrackedWordsRef.current == null) {
+      prevTrackedWordsRef.current = allChaptersTotalWords;
+      return;
+    }
+
+    const delta = allChaptersTotalWords - prevTrackedWordsRef.current;
+    prevTrackedWordsRef.current = allChaptersTotalWords;
+
+    if (delta > 0) recordWords(delta);
+  }, [activeBookId, allChaptersTotalWords, recordWords]);
 
   // ── 角色胶囊库 ───────────────────────────────────────────────
   const {
@@ -316,44 +279,8 @@ function App() {
 
   // 一键排版：段首缩进 + 句末自动分段 + 去多余空行
   const handleFormat = useCallback(() => {
-    const raw = state.content;
-    if (!raw.trim()) return;
-
-    // 按两个及以上连续换行切分段落块
-    const blocks = raw.split(/\n{2,}/);
-    const result: string[] = [];
-
-    for (const block of blocks) {
-      const text = block.trim();
-      if (!text) continue;
-
-      // 每个段落块内可能有多行（单换行），逐行处理后再按句末分段
-      const rawLines = text.split('\n').map(l => l.trim()).filter(Boolean);
-
-      for (const line of rawLines) {
-        const charCount = line.replace(/\s/g, '').length;
-
-        if (charCount > 60) {
-          // 长段落：按中文句末标点自动拆分为多个短段
-          const sentences = splitBySentenceEnd(line);
-          for (const s of sentences) {
-            if (s.trim()) {
-              result.push('\u3000\u3000' + s.trim());
-              result.push('');    // 段落间空行
-            }
-          }
-        } else {
-          // 短段落直接加首行缩进
-          result.push('\u3000\u3000' + line);
-          result.push('');
-        }
-      }
-    }
-
-    // 去掉末尾多余空行
-    while (result.length && result[result.length - 1] === '') result.pop();
-
-    setContent(result.join('\n'));
+    const formatted = formatNovelText(state.content);
+    if (formatted) setContent(formatted);
   }, [state.content, setContent]);
 
   const handleCheckConsistency = useCallback(async () => {
@@ -369,14 +296,14 @@ function App() {
     for (const c of memoryCharacters) tfMap[`角色_${c.name}`] = c.content;
     for (const w of memoryWorldRules)  tfMap[`设定_${w.name}`] = w.content;
     try {
-      const issues = await checkConsistency(activeDraft.content, tfMap, settings);
+      const issues = await checkConsistency(currentDraftContent, tfMap, settings);
       setConsistencyIssues(issues);
     } catch (err) {
       setConsistencyError(err instanceof Error ? err.message : '检查失败，请重试');
     } finally {
       setIsCheckingConsistency(false);
     }
-  }, [activeDraft, settings, memoryCharacters, memoryWorldRules]);
+  }, [activeDraft, currentDraftContent, settings, memoryCharacters, memoryWorldRules]);
 
   const handleGenerateOutline = useCallback(async () => {
     if (!activeBook?.synopsis || !settings.apiKey) return;
@@ -403,7 +330,7 @@ function App() {
 
   // ── 渲染 ──────────────────────────────────────────────────
   return (
-    <div className="app">
+    <div className={`app theme-${storeTheme}`}>
       <div className="bg-orb bg-orb-1" />
       <div className="bg-orb bg-orb-2" />
       <div className="bg-orb bg-orb-3" />
@@ -425,7 +352,7 @@ function App() {
         themes={THEMES}
         onClear={handleClear}
         onUndo={undoClear}
-        onOpenSettings={() => dispatch({ type: 'OPEN_PANEL', panel: 'settings' })}
+        onOpenSettings={() => openPanelAction('settings')}
         onThemeChange={setTheme}
       />
 
@@ -439,7 +366,7 @@ function App() {
       </div>
 
       <div className="app-body">
-        <Sidebar
+        <LeftSidebar
           books={books}
           chapters={chapters}
           activeBookId={activeBookId}
@@ -447,14 +374,14 @@ function App() {
           completedChapterIds={completedChapterIds}
           onSelectBook={switchBook}
           onSelectChapter={selectDraft}
-          onCreateBook={() => dispatch({ type: 'OPEN_PANEL', panel: 'createBook' })}
+          onCreateBook={() => openPanelAction('createBook')}
           onCreateChapter={createChapter}
           onDeleteBook={deleteBook}
           onDeleteChapter={deleteChapter}
           onRenameChapter={updateChapterTitle}
           onRenameBook={(id, title) => updateBookMeta(id, { title })}
           onReorderChapter={reorderChapters}
-          onOpenOutline={() => dispatch({ type: 'OPEN_PANEL', panel: 'outline' })}
+          onOpenOutline={() => openPanelAction('outline')}
         />
 
         <main className="main-content">
@@ -478,7 +405,7 @@ function App() {
                 <button
                   className="btn btn-ghost"
                   style={{ fontSize: 12 }}
-                  onClick={() => dispatch({ type: 'OPEN_PANEL', panel: 'stats' })}
+                  onClick={() => openPanelAction('stats')}
                   title="写作统计"
                 >
                   📊 统计
@@ -486,7 +413,7 @@ function App() {
                 <button
                   className="btn btn-ghost"
                   style={{ fontSize: 12 }}
-                  onClick={() => dispatch({ type: 'OPEN_PANEL', panel: 'crossSearch' })}
+                  onClick={() => openPanelAction('crossSearch')}
                   title="全书搜索 (Ctrl+Shift+F)"
                 >
                   🔭 全书搜索
@@ -548,21 +475,21 @@ function App() {
                 <div className="chapter-title-bar-actions">
                   <button
                     className="btn btn-ghost chapter-action-btn"
-                    onClick={() => dispatch({ type: 'OPEN_PANEL', panel: 'snapshot' })}
+                    onClick={() => openPanelAction('snapshot')}
                     title="章节版本历史"
                   >
                     🕐 历史
                   </button>
                   <button
                     className="btn btn-ghost chapter-action-btn"
-                    onClick={() => { setConsistencyIssues(null); setConsistencyError(null); dispatch({ type: 'OPEN_PANEL', panel: 'consistency' }); }}
+                    onClick={() => { setConsistencyIssues(null); setConsistencyError(null); openPanelAction('consistency'); }}
                     title="AI 一致性检查"
                   >
                     🔍 检查
                   </button>
                   <button
                     className="btn btn-ghost chapter-action-btn"
-                    onClick={() => dispatch({ type: 'OPEN_PANEL', panel: 'aiDetect' })}
+                    onClick={() => openPanelAction('aiDetect')}
                     title="去AI化检测"
                   >
                     🕵️ AI检测
@@ -603,7 +530,7 @@ function App() {
               </button>
               <button
                 className="btn btn-ghost scene-tpl-btn"
-                onClick={() => dispatch({ type: 'OPEN_PANEL', panel: 'sceneTemplates' })}
+                onClick={() => openPanelAction('sceneTemplates')}
                 title="插入场景模板"
               >
                 🎬
@@ -613,7 +540,7 @@ function App() {
               <FindReplace
                 content={state.content}
                 mode={findMode}
-                onClose={() => { dispatch({ type: 'CLOSE_FIND' }); setFindFocusRange(null); }}
+                onClose={() => { closeFind(); setFindFocusRange(null); }}
                 onChange={setContent}
                 onMatchFocus={(start, end) => setFindFocusRange({ start, end })}
               />
@@ -622,7 +549,7 @@ function App() {
             <div className={`editor-split ${(state.isStreaming || state.hasPendingContinuation || state.isPolishing || state.pendingPolish !== null) ? 'has-suggestion' : ''}`}>
               <Editor
                 content={state.content}
-                chapterTitle={activeDraft?.title}
+                bookId={activeBookId ?? null}
                 isStreaming={state.isStreaming}
                 isPolishing={state.isPolishing}
                 aiInsertRange={state.aiInsertRange}
@@ -668,52 +595,48 @@ function App() {
           </div>
         </main>
 
-        {/* ── 右侧记忆侧边栏 ──────────────────────────────── */}
-        <Suspense fallback={null}>
-          <MemorySidebar
-            bookId={activeBookId ?? null}
-            contextBundle={bundleSnapshot}
-            chapterSummaries={memoryChapterSummaries}
-            notes={memoryNotes}
-            onAddNote={(name, content) => addMemory({ name, content, type: 'note' })}
-            onRemoveEntry={removeMemory}
-            onOpenFullMemory={() => dispatch({ type: 'OPEN_PANEL', panel: 'memory' })}
-            onGraphNodeClick={(name, type) => {
-              if (type === 'character') setCharacterHighlight(name);
-            }}
-            charPanel={(onBack) => (
-              <Suspense fallback={<LazyFallback />}>
-                <CharacterPanel
-                  bookId={activeBookId ?? null}
-                  capsules={capsules}
-                  onClose={onBack}
-                  onInjectContext={insertAtCursor}
-                  highlightName={characterHighlight}
-                  onCreateCapsule={createCapsule}
-                  onUpdateCapsule={updateCapsule}
-                  onDeleteCapsule={removeCapsule}
-                />
-              </Suspense>
-            )}
-            hooksPanel={(onBack) => (
-              <Suspense fallback={<LazyFallback />}>
-                <PlotHooksPanel
-                  hooks={plotHooks}
-                  onAdd={addPlotHook}
-                  onUpdate={updatePlotHook}
-                  onRemove={removePlotHook}
-                  onResolve={resolvePlotHook}
-                  onDefer={deferPlotHook}
-                  onReopen={reopenPlotHook}
-                  onClose={onBack}
-                />
-              </Suspense>
-            )}
-            onToggleInstruction={() => dispatch({ type: 'TOGGLE_INSTRUCTION' })}
-            hasInstruction={!!settings.customPrompt.trim()}
-            plotHooksUrgent={plotHooksUrgent}
-          />
-        </Suspense>
+        {/* ── 右侧工具侧边栏 ──────────────────────────────── */}
+        <RightSidebar
+          bookId={activeBookId ?? null}
+          onGraphNodeClick={(name, type) => {
+            if (type === 'character') {
+              setCapsuleHighlight(name);
+            }
+          }}
+          onToggleInstruction={toggleInstruction}
+          currentChapterNumber={activeDraft ? activeDraft.order + 1 : undefined}
+          currentChapterOutline={currentOutlineCard?.synopsis ?? ''}
+          onWriteBeat={continueWriting}
+          onContinue={continueWriting}
+          onPolish={() => polish('', 'standard')}
+          canAcceptSuggestion={state.hasPendingContinuation || state.pendingPolish !== null}
+          aiActionsDisabled={
+            !isOnline ||
+            state.isStreaming ||
+            state.isPolishing ||
+            state.hasPendingContinuation ||
+            state.pendingPolish !== null ||
+            state.isGeneratingVersions
+          }
+          onAcceptSuggestion={() => {
+            if (state.pendingPolish) {
+              acceptPolish();
+              recordAiAccepted();
+            } else if (state.hasPendingContinuation) {
+              acceptContinuation();
+              recordAiAccepted();
+            }
+          }}
+          onRejectSuggestion={() => {
+            if (state.pendingPolish) {
+              rejectPolish();
+              recordAiRejected();
+            } else if (state.hasPendingContinuation) {
+              rejectContinuation();
+              recordAiRejected();
+            }
+          }}
+        />
       </div>
 
       <StatusBar
@@ -729,193 +652,87 @@ function App() {
         creativity={settings.creativity}
       />
 
-      <Suspense fallback={<LazyFallback />}>
-      {openPanel === 'memory' && (
-        <MemoryPanel
-          chapterSummaries={memoryChapterSummaries}
-          notes={memoryNotes}
-          onAdd={addMemory}
-          onUpdate={updateMemory}
-          onRemove={removeMemory}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-          onOpenCharacters={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
+      <GlobalModals
+        settings={settings}
+        setSettings={setSettings}
+        booksCount={books.length}
+        createBook={createBook}
+        createBookWithChapters={createBookWithChapters}
+        showChapterComplete={showChapterComplete}
+        setShowChapterComplete={setShowChapterComplete}
+        chapterCompleteDraft={chapterCompleteDraft}
+        currentDraftWordCount={currentDraftContent.replace(/\s/g, '').length}
+        activeBookId={activeBookId ?? null}
+        onChapterCompleteDone={(draftId, summary) => {
+          updateChapterSummary(draftId, summary);
+          setCompletedChapterIdsArr(prev => (
+            prev.includes(draftId) ? prev : [...prev, draftId]
+          ));
+          refreshMemory();
+        }}
+        saveSnapshot={saveSnapshot}
+        chapterSummaries={memoryChapterSummaries}
+        notes={memoryNotes}
+        addMemory={addMemory}
+        updateMemory={updateMemory}
+        removeMemory={removeMemory}
+        pendingVersions={state.pendingVersions}
+        selectVersion={selectVersion}
+        dismissVersions={dismissVersions}
+        activeDraft={activeDraft ?? null}
+        snapshots={snapshots}
+        overLimitWarning={overLimitWarning}
+        setContent={setContent}
+        deleteSnapshot={deleteSnapshot}
+        pinSnapshot={pinSnapshot}
+        content={state.content}
+        dismissOverLimitWarning={dismissOverLimitWarning}
+        consistencyIssues={consistencyIssues}
+        isCheckingConsistency={isCheckingConsistency}
+        consistencyError={consistencyError}
+        handleCheckConsistency={handleCheckConsistency}
+        bookChapters={bookChapters(activeBookId)}
+        selectDraft={selectDraft}
+        writingStats={writingStats}
+        insertAtCursor={insertAtCursor}
+        styleProfiles={styleProfiles}
+        styleStatus={styleStatus}
+        styleError={styleError}
+        createStyleProfile={createStyleProfile}
+        deleteStyleProfile={deleteStyleProfile}
+        renameStyleProfile={renameStyleProfile}
+        isPolishing={state.isPolishing}
+        polishAntiDetect={() => polish('', 'anti-detect')}
+        capsules={capsules}
+        memoryCharacters={memoryCharacters}
+        capsuleStats={capsuleStats}
+        createCapsule={createCapsule}
+        updateCapsule={updateCapsule}
+        removeCapsule={removeCapsule}
+        migrateCapsuleFromMemory={migrateCapsuleFromMemory}
+        capsuleHighlight={capsuleHighlight}
+        clearCapsuleHighlight={() => setCapsuleHighlight(undefined)}
+        outline={outline}
+        activeBookTitle={activeBook?.title ?? ''}
+        activeBookSynopsis={activeBook?.synopsis ?? ''}
+        isGeneratingOutline={isGeneratingOutline}
+        handleGenerateOutline={handleGenerateOutline}
+      />
 
-      {openPanel === 'settings' && (
-        <SettingsModal
-          settings={settings}
-          onSave={(s: AppSettings) => setSettings(s)}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {showChapterComplete && activeDraft && activeBookId && (
-        <ChapterCompleteModal
-          draft={activeDraft}
-          wordCount={activeDraft.content.replace(/\s/g, '').length}
-          settings={settings}
-          bookId={activeBookId}
-          saveSnapshot={saveSnapshot}
-          onDone={(summary) => {
-            updateChapterSummary(activeDraft.id, summary);
-            if (activeDraftId) {
-              setCompletedChapterIdsArr(prev => prev.includes(activeDraftId) ? prev : [...prev, activeDraftId]);
-            }
-            refreshMemory();
-          }}
-          onClose={() => setShowChapterComplete(false)}
-        />
-      )}
-
-      {openPanel === 'createBook' && (
-        <CreateBookModal
-          isFirst={books.length === 0}
-          onConfirm={async (title, synopsis) => {
-            await createBook(title, synopsis);
-            dispatch({ type: 'CLOSE_PANEL' });
-          }}
-          onConfirmImport={async (bookTitle, chapters) => {
-            await createBookWithChapters(bookTitle, '', chapters);
-            dispatch({ type: 'CLOSE_PANEL' });
-          }}
-          onCancel={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 多版本续写选择面板 */}
-      {state.pendingVersions && state.pendingVersions.length > 0 && (
-        <VersionPickerPanel
-          versions={state.pendingVersions}
-          onSelect={selectVersion}
-          onDismiss={dismissVersions}
-        />
-      )}
-
-      {/* 章节版本历史 */}
-      {openPanel === 'snapshot' && activeDraft && (
-        <SnapshotPanel
-          snapshots={snapshots}
-          overLimitWarning={overLimitWarning}
-          onRestore={content => { setContent(content); }}
-          onDelete={deleteSnapshot}
-          onPin={pinSnapshot}
-          onManualSave={() => saveSnapshot(state.content, activeDraft.title, '手动存档')}
-          onDismissWarning={dismissOverLimitWarning}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 一致性检查 */}
-      {openPanel === 'consistency' && (
-        <ConsistencyPanel
-          issues={consistencyIssues}
-          isChecking={isCheckingConsistency}
-          error={consistencyError}
-          onCheck={handleCheckConsistency}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-          onGoComplete={() => { dispatch({ type: 'CLOSE_PANEL' }); setShowChapterComplete(true); }}
-        />
-      )}
-
-      {/* 全书跨章节搜索 */}
-      {openPanel === 'crossSearch' && (
-        <CrossChapterSearch
-          chapters={bookChapters(activeBookId)}
-          onNavigate={chapterId => { selectDraft(chapterId); }}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 写作统计 */}
-      {openPanel === 'stats' && (
-        <StatsPanel stats={writingStats} onClose={() => dispatch({ type: 'CLOSE_PANEL' })} />
-      )}
-
-      {/* 快捷键帮助 */}
-      {openPanel === 'shortcutHelp' && (
-        <ShortcutHelpPanel onClose={() => dispatch({ type: 'CLOSE_PANEL' })} />
-      )}
-
-      {/* 场景模板库 */}
-      {openPanel === 'sceneTemplates' && (
-        <SceneTemplates
-          onInsert={insertAtCursor}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 文风学习面板 */}
-      {openPanel === 'styleLearning' && (
-        <StyleLearningPanel
-          profiles={styleProfiles}
-          status={styleStatus}
-          errorMsg={styleError}
-          drafts={bookChapters(activeBookId)}
-          sourceBookId={activeBookId ?? ''}
-          activeProfileId={settings.imitationProfileId ?? ''}
-          imitationMode={settings.imitationMode ?? false}
-          modularWriting={settings.modularWriting ?? false}
-          onCreateProfile={createStyleProfile}
-          onDeleteProfile={deleteStyleProfile}
-          onRenameProfile={renameStyleProfile}
-          onSelectProfile={id => setSettings({ ...settings, imitationProfileId: id })}
-          onToggleImitation={on => setSettings({ ...settings, imitationMode: on })}
-          onToggleModular={on => setSettings({ ...settings, modularWriting: on })}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 去AI化检测 */}
-      {openPanel === 'aiDetect' && activeDraft && (
-        <AiDetectionPanel
-          content={state.content}
-          isPolishing={state.isPolishing}
-          onPolishAntiDetect={() => polish('', 'anti-detect')}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-
-      {/* 知识图谱已整合入右侧边栏 MiniGraph；角色管理/伏笔已整合入侧边栏子视图，此处不再渲染独立浮层 */}
-
-      {/* 角色胶囊库（右侧抽屉，独立于 openPanel 槽） */}
-      {showCapsule && (
-        <div className="panel-right-overlay">
-          <CapsulePanel
-            capsules={capsules}
-            characterMemories={memoryCharacters}
-            stats={capsuleStats}
-            onClose={() => { setShowCapsule(false); setCapsuleHighlight(undefined); }}
-            onCreate={createCapsule}
-            onUpdate={updateCapsule}
-            onDelete={removeCapsule}
-            onMigrateMemory={migrateCapsuleFromMemory}
-            onInjectContext={(snippet: string) => insertAtCursor(snippet)}
-            onViewGraph={(_name: string) => {}}
-            highlightName={capsuleHighlight}
-          />
-        </div>
-      )}
-
-      {/* 大纲规划板 */}
-      {openPanel === 'outline' && (
-        <OutlinePanel
-          cards={outline.cards}
-          bookTitle={activeBook?.title ?? ''}
-          bookSynopsis={activeBook?.synopsis ?? ''}
-          isGenerating={isGeneratingOutline}
-          canvasPositions={outline.canvasPositions}
-          settings={settings}
-          onAdd={outline.addCard}
-          onUpdate={outline.updateCard}
-          onDelete={outline.deleteCard}
-          onReorder={outline.reorderCards}
-          onGenerate={handleGenerateOutline}
-          onNodeMove={outline.setNodePosition}
-          onClose={() => dispatch({ type: 'CLOSE_PANEL' })}
-        />
-      )}
-      </Suspense>
+      <InlineAiMenu
+        disabled={
+          !isOnline ||
+          state.isStreaming ||
+          state.isPolishing ||
+          state.hasPendingContinuation ||
+          state.pendingPolish !== null ||
+          state.isGeneratingVersions
+        }
+        onPolish={() => polish('', 'standard')}
+        onContinue={continueWriting}
+        onRewrite={rewriteSelection}
+        onExplain={(text) => explainText(text, settings)}
+      />
 
     </div>
   );

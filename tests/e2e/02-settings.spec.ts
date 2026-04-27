@@ -10,7 +10,7 @@
  */
 
 import { test, expect } from '@playwright/test';
-import { resetAppState, waitForApp, openSettings, hasApiKey, seedSettings, TEST_API_KEY, TEST_MODEL } from './helpers';
+import { resetAppState, waitForApp, openSettings, hasApiKey, seedSettings } from './helpers';
 
 test.beforeEach(async ({ page }) => {
   await resetAppState(page);

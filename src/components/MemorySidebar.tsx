@@ -1,17 +1,9 @@
 // =============================================================
-// components/MemorySidebar.tsx — 右侧记忆侧边栏（可收起）
-//
-// 【展开布局顺序】
-//   ① AI 上下文
-//   ② 角色管理（快捷按钮 → 子视图）
-//   ③ 指令（开关按钮，在知识图谱上方）
-//   ④ 知识图谱（2D 内嵌）
-//   ⑤ 章节记录
-//   ⑥ 笔记
-//   ⑦ 伏笔（内嵌，笔记下方）
+// components/MemorySidebar.tsx - 右侧记忆侧边栏（可收起）
 // =============================================================
 
 import { useState } from 'react';
+import type { ReactNode } from 'react';
 import type { ContextBundle } from '../api/memoryService';
 import type { MemoryEntry } from '../memory/types';
 import { ContextInspector } from './ContextInspector';
@@ -20,30 +12,32 @@ import { MiniGraph } from './MiniGraph';
 type SideView = 'home' | 'chars';
 
 interface MemorySidebarProps {
-  bookId?:              string | null;
-  contextBundle:        ContextBundle | null;
-  chapterSummaries:     MemoryEntry[];
-  notes:                MemoryEntry[];
-  onAddNote:            (name: string, content: string) => void;
-  onRemoveEntry:        (id: string) => void;
-  onOpenFullMemory:     () => void;
-  onGraphNodeClick?:    (name: string, type: string) => void;
-  // 内嵌子视图：角色管理
-  charPanel?:           (onBack: () => void) => React.ReactNode;
-  // 内嵌常驻区块：伏笔
-  hooksPanel?:          (onBack: () => void) => React.ReactNode;
-  // 指令开关
+  bookId?: string | null;
+  contextBundle: ContextBundle | null;
+  chapterSummaries: MemoryEntry[];
+  notes: MemoryEntry[];
+  onAddNote: (name: string, content: string) => void;
+  onRemoveEntry: (id: string) => void;
+  onOpenFullMemory: () => void;
+  onGraphNodeClick?: (name: string, type: string) => void;
+  charPanel?: (onBack: () => void) => ReactNode;
+  hooksPanel?: (onBack: () => void) => ReactNode;
   onToggleInstruction?: () => void;
-  hasInstruction?:      boolean;
-  plotHooksUrgent?:     number;
-  // 文风学习（外部弹窗，保留入口）
+  hasInstruction?: boolean;
+  plotHooksUrgent?: number;
   onOpenStyleLearning?: () => void;
+  onOpenCapsules?: () => void;
 }
 
-// ── 折叠图标条项目 ────────────────────────────────────────────
 function CollapseIcon({
-  emoji, label, onClick,
-}: { emoji: string; label: string; onClick: () => void }) {
+  emoji,
+  label,
+  onClick,
+}: {
+  emoji: string;
+  label: string;
+  onClick: () => void;
+}) {
   return (
     <button className="msb-col-icon" onClick={onClick} title={label}>
       <span>{emoji}</span>
@@ -51,17 +45,24 @@ function CollapseIcon({
   );
 }
 
-// ── 可折叠区块 ────────────────────────────────────────────────
 function SideSection({
-  title, emoji, count, defaultOpen = true, children,
+  title,
+  emoji,
+  count,
+  defaultOpen = true,
+  children,
 }: {
-  title: string; emoji: string; count?: number;
-  defaultOpen?: boolean; children: React.ReactNode;
+  title: string;
+  emoji: string;
+  count?: number;
+  defaultOpen?: boolean;
+  children: ReactNode;
 }) {
   const [open, setOpen] = useState(defaultOpen);
+
   return (
     <div className="msb-section">
-      <button className="msb-section-header" onClick={() => setOpen(o => !o)}>
+      <button className="msb-section-header" onClick={() => setOpen(value => !value)}>
         <span className="msb-section-emoji">{emoji}</span>
         <span className="msb-section-title">{title}</span>
         {count != null && count > 0 && (
@@ -74,7 +75,6 @@ function SideSection({
   );
 }
 
-// ── 主组件 ────────────────────────────────────────────────────
 export function MemorySidebar({
   bookId,
   contextBundle,
@@ -89,12 +89,14 @@ export function MemorySidebar({
   onToggleInstruction,
   hasInstruction,
   plotHooksUrgent = 0,
+  onOpenStyleLearning,
+  onOpenCapsules,
 }: MemorySidebarProps) {
   const [collapsed, setCollapsed] = useState(false);
-  const [sideView, setSideView]   = useState<SideView>('home');
+  const [sideView, setSideView] = useState<SideView>('home');
   const [addingNote, setAddingNote] = useState(false);
-  const [noteName,   setNoteName]   = useState('');
-  const [noteBody,   setNoteBody]   = useState('');
+  const [noteName, setNoteName] = useState('');
+  const [noteBody, setNoteBody] = useState('');
 
   const sortedSummaries = [...chapterSummaries]
     .sort((a, b) => (b.chapterOrder ?? b.updatedAt) - (a.chapterOrder ?? a.updatedAt))
@@ -103,29 +105,39 @@ export function MemorySidebar({
   const handleAddNote = () => {
     if (!noteName.trim() || !noteBody.trim()) return;
     onAddNote(noteName.trim(), noteBody.trim());
-    setNoteName(''); setNoteBody(''); setAddingNote(false);
+    setNoteName('');
+    setNoteBody('');
+    setAddingNote(false);
+  };
+
+  const resetNoteForm = () => {
+    setAddingNote(false);
+    setNoteName('');
+    setNoteBody('');
   };
 
   const goBack = () => setSideView('home');
 
-  // ── 折叠状态 ──────────────────────────────────────────────
   if (collapsed) {
     return (
       <aside className="msb-root msb-collapsed">
-        <button className="msb-toggle-btn" onClick={() => setCollapsed(false)} title="展开侧边栏">‹</button>
+        <button className="msb-toggle-btn" onClick={() => setCollapsed(false)} title="展开侧边栏">
+          »
+        </button>
         <div className="msb-col-icons">
-          <CollapseIcon emoji="🧠" label="AI 上下文" onClick={() => setCollapsed(false)} />
-          <CollapseIcon emoji="👤" label="角色管理"  onClick={() => { setCollapsed(false); setSideView('chars'); }} />
-          <CollapseIcon emoji="🕸" label="知识图谱"  onClick={() => setCollapsed(false)} />
-          <CollapseIcon emoji="📖" label="章节记录"  onClick={() => setCollapsed(false)} />
-          <CollapseIcon emoji="📝" label="笔记"      onClick={() => setCollapsed(false)} />
-          <CollapseIcon emoji="🎣" label="伏笔"      onClick={() => setCollapsed(false)} />
+          <CollapseIcon emoji="🧥" label="AI 上下文" onClick={() => setCollapsed(false)} />
+          <CollapseIcon emoji="👤" label="角色管理" onClick={() => { setCollapsed(false); setSideView('chars'); }} />
+          {onOpenCapsules && <CollapseIcon emoji="🧬" label="角色胶囊" onClick={onOpenCapsules} />}
+          {onOpenStyleLearning && <CollapseIcon emoji="🎨" label="文风学习" onClick={onOpenStyleLearning} />}
+          <CollapseIcon emoji="🕸" label="知识图谱" onClick={() => setCollapsed(false)} />
+          <CollapseIcon emoji="🉉" label="章节记录" onClick={() => setCollapsed(false)} />
+          <CollapseIcon emoji="📝" label="笔记" onClick={() => setCollapsed(false)} />
+          <CollapseIcon emoji="🎣" label="伏笔" onClick={() => setCollapsed(false)} />
         </div>
       </aside>
     );
   }
 
-  // ── 子视图：角色管理 ─────────────────────────────────────
   if (sideView === 'chars') {
     return (
       <aside className="msb-root msb-expanded">
@@ -140,36 +152,45 @@ export function MemorySidebar({
     );
   }
 
-  // ── 主视图 ────────────────────────────────────────────────
   return (
     <aside className="msb-root msb-expanded">
-
-      {/* 标题栏 */}
       <div className="msb-header">
         <span className="msb-title">记忆</span>
         <div className="msb-header-actions">
-          <button className="msb-action-btn" onClick={onOpenFullMemory} title="打开完整记录管理">⊞</button>
-          <button className="msb-toggle-btn msb-toggle-inline" onClick={() => setCollapsed(true)} title="收起">›</button>
+          <button className="msb-action-btn" onClick={onOpenFullMemory} title="打开完整记忆管理">
+            ☐
+          </button>
+          <button className="msb-toggle-btn msb-toggle-inline" onClick={() => setCollapsed(true)} title="收起">
+            —
+          </button>
         </div>
       </div>
 
       <div className="msb-body">
-
-        {/* ① AI 上下文 */}
-        <SideSection title="AI 上下文" emoji="🧠" defaultOpen>
+        <SideSection title="AI 上下文" emoji="🧥" defaultOpen>
           <ContextInspector bundle={contextBundle} compact={false} />
         </SideSection>
 
-        {/* ② 角色管理（快捷按钮） */}
-        {charPanel && (
+        {(charPanel || onOpenCapsules || onOpenStyleLearning) && (
           <div className="msb-shortcuts">
-            <button className="msb-shortcut-btn msb-shortcut-wide" onClick={() => setSideView('chars')}>
-              <span>👤</span> 角色管理
-            </button>
+            {charPanel && (
+              <button className="msb-shortcut-btn" onClick={() => setSideView('chars')}>
+                <span>👤</span> 角色管理
+              </button>
+            )}
+            {onOpenCapsules && (
+              <button className="msb-shortcut-btn" onClick={onOpenCapsules}>
+                <span>🧬</span> 角色胶囊
+              </button>
+            )}
+            {onOpenStyleLearning && (
+              <button className="msb-shortcut-btn" onClick={onOpenStyleLearning}>
+                <span>🎨</span> 文风学习
+              </button>
+            )}
           </div>
         )}
 
-        {/* ③ 指令（在知识图谱上方） */}
         {onToggleInstruction && (
           <button
             className={`msb-instruction-toggle ${hasInstruction ? 'msb-instruction-active' : ''}`}
@@ -180,7 +201,6 @@ export function MemorySidebar({
           </button>
         )}
 
-        {/* ④ 知识图谱 */}
         <SideSection title="知识图谱" emoji="🕸" defaultOpen>
           <MiniGraph
             bookId={bookId ?? null}
@@ -192,27 +212,28 @@ export function MemorySidebar({
           />
         </SideSection>
 
-        {/* ⑤ 章节记录 */}
         <SideSection
           title="章节记录"
-          emoji="📖"
+          emoji="🉉"
           count={chapterSummaries.length}
           defaultOpen={chapterSummaries.length > 0}
         >
           {sortedSummaries.length === 0 ? (
-            <div className="msb-empty">完成章节后自动生成摘要</div>
+            <div className="msb-empty">完成章节后会自动生成摘要</div>
           ) : (
             <div className="msb-summary-list">
-              {sortedSummaries.map(e => (
-                <div key={e.id} className="msb-summary-item">
+              {sortedSummaries.map(entry => (
+                <div key={entry.id} className="msb-summary-item">
                   <div className="msb-summary-header">
                     <span className="msb-summary-num">
-                      {e.chapterOrder != null ? `第${e.chapterOrder + 1}章` : ''}
+                      {entry.chapterOrder != null ? `第${entry.chapterOrder + 1}章` : ''}
                     </span>
-                    <span className="msb-summary-title">{e.name}</span>
-                    <button className="msb-del-btn" onClick={() => onRemoveEntry(e.id)} title="删除">×</button>
+                    <span className="msb-summary-title">{entry.name}</span>
+                    <button className="msb-del-btn" onClick={() => onRemoveEntry(entry.id)} title="删除">
+                      ×
+                    </button>
                   </div>
-                  <div className="msb-summary-content">{e.content}</div>
+                  <div className="msb-summary-content">{entry.content}</div>
                 </div>
               ))}
               {chapterSummaries.length > 6 && (
@@ -224,52 +245,67 @@ export function MemorySidebar({
           )}
         </SideSection>
 
-        {/* ⑥ 笔记 */}
         <SideSection title="笔记" emoji="📝" count={notes.length} defaultOpen={false}>
           {notes.length === 0 && !addingNote ? (
             <div className="msb-empty">还没有笔记</div>
           ) : (
             <div className="msb-note-list">
-              {notes.map(e => (
-                <div key={e.id} className="msb-note-item">
-                  <div className="msb-note-name">{e.name}</div>
-                  <div className="msb-note-content">{e.content}</div>
-                  <button className="msb-del-btn msb-note-del" onClick={() => onRemoveEntry(e.id)} title="删除">×</button>
+              {notes.map(entry => (
+                <div key={entry.id} className="msb-note-item">
+                  <div className="msb-note-name">{entry.name}</div>
+                  <div className="msb-note-content">{entry.content}</div>
+                  <button
+                    className="msb-del-btn msb-note-del"
+                    onClick={() => onRemoveEntry(entry.id)}
+                    title="删除"
+                  >
+                    ×
+                  </button>
                 </div>
               ))}
             </div>
           )}
+
           {addingNote ? (
             <div className="msb-note-form">
               <input
                 className="msb-note-input"
                 placeholder="笔记标题"
                 value={noteName}
-                onChange={e => setNoteName(e.target.value)}
+                onChange={event => setNoteName(event.target.value)}
                 autoFocus
-                onKeyDown={e => { if (e.key === 'Escape') { setAddingNote(false); setNoteName(''); setNoteBody(''); } }}
+                onKeyDown={event => {
+                  if (event.key === 'Escape') resetNoteForm();
+                }}
               />
               <textarea
                 className="msb-note-input msb-note-textarea"
                 placeholder="笔记内容…"
                 value={noteBody}
-                onChange={e => setNoteBody(e.target.value)}
+                onChange={event => setNoteBody(event.target.value)}
                 rows={3}
               />
               <div className="msb-note-form-actions">
-                <button className="btn btn-ghost" style={{ fontSize: 11 }}
-                  onClick={() => { setAddingNote(false); setNoteName(''); setNoteBody(''); }}>取消</button>
-                <button className="btn btn-primary" style={{ fontSize: 11 }}
+                <button className="btn btn-ghost" style={{ fontSize: 11 }} onClick={resetNoteForm}>
+                  取消
+                </button>
+                <button
+                  className="btn btn-primary"
+                  style={{ fontSize: 11 }}
                   onClick={handleAddNote}
-                  disabled={!noteName.trim() || !noteBody.trim()}>保存</button>
+                  disabled={!noteName.trim() || !noteBody.trim()}
+                >
+                  保存
+                </button>
               </div>
             </div>
           ) : (
-            <button className="msb-add-note-btn" onClick={() => setAddingNote(true)}>+ 添加笔记</button>
+            <button className="msb-add-note-btn" onClick={() => setAddingNote(true)}>
+              + 添加笔记
+            </button>
           )}
         </SideSection>
 
-        {/* ⑦ 伏笔（笔记下方，内嵌常驻） */}
         {hooksPanel && (
           <SideSection
             title="伏笔"
@@ -282,7 +318,6 @@ export function MemorySidebar({
             </div>
           </SideSection>
         )}
-
       </div>
     </aside>
   );

@@ -9,7 +9,7 @@
 // =============================================================
 
 /** 记忆宫殿条目类型 */
-export type MemoryType = 'character' | 'world_rule' | 'chapter_summary' | 'note';
+export type MemoryType = 'character' | 'world_rule' | 'chapter_summary' | 'note' | 'plot_hook';
 
 export interface MemoryEntry {
   id: string;
@@ -28,6 +28,7 @@ export const MEMORY_TYPE_META: Record<MemoryType, { label: string; desc: string;
   world_rule:      { label: '世界设定', desc: '规则、魔法体系、历史背景、地理设定',   color: '#60a5fa', emoji: '🌍' },
   chapter_summary: { label: '章节摘要', desc: '已完成章节的情节摘要',                color: '#34d399', emoji: '📖' },
   note:            { label: '笔记',     desc: '作者自定义笔记、提醒、灵感',           color: '#fbbf24', emoji: '📝' },
+  plot_hook:       { label: '伏笔',     desc: 'AI 自动提取的伏笔与悬念',               color: '#fb7185', emoji: '🪝' },
 };
 
 // ── 情节钩子（独立功能，保持不变） ───────────────────────────────

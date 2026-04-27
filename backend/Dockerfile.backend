@@ -1,0 +1,39 @@
+# ── 后端构建镜像 ───────────────────────────────────────────────
+FROM python:3.11-slim AS base
+
+WORKDIR /app
+
+# 系统依赖（sentence-transformers 需要 build-essential）
+RUN apt-get update && apt-get install -y --no-install-recommends \
+    build-essential \
+    curl \
+    && rm -rf /var/lib/apt/lists/*
+
+# 安装 Python 依赖
+COPY requirements.txt .
+RUN pip install --no-cache-dir -r requirements.txt
+
+# ── 预下载嵌入模型 ─────────────────────────────────────────────
+# 国内镜像加速，构建完成后运行时已设 HF_HUB_OFFLINE=1 不再下载
+ENV HF_ENDPOINT=https://hf-mirror.com
+ENV SENTENCE_TRANSFORMERS_HOME=/app/models
+RUN python -c "\
+from sentence_transformers import SentenceTransformer; \
+print('Downloading BAAI/bge-small-zh-v1.5 ...'); \
+m = SentenceTransformer('BAAI/bge-small-zh-v1.5'); \
+v = m.encode('test'); \
+print('OK - dim:', len(v)); \
+"
+
+# ── 复制应用代码 ───────────────────────────────────────────────
+COPY . .
+
+# 创建数据目录
+RUN mkdir -p /app/data /app/logs
+
+EXPOSE 8000
+
+# 启动命令
+CMD ["uvicorn", "interfaces.main:app", \
+     "--host", "0.0.0.0", "--port", "8000", \
+     "--workers", "1"]

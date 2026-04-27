@@ -3,6 +3,7 @@
 // =============================================================
 
 import { useState, useEffect, useCallback, useRef } from 'react';
+import { UNLOAD_BACKUP_STORAGE_KEY } from '../config/constants';
 import { DEFAULT_DRAFT_CONTEXT_STATE } from '../types';
 import type { Book, DraftContextState } from '../types';
 import { dbGetAll, dbPut, dbDelete, dbReplaceAll, kvGet, kvSet } from '../db/index';
@@ -53,6 +54,88 @@ function normalizeChapter(d: Draft): Draft {
   };
 }
 
+interface UnloadBackupPayload {
+  draftId: string;
+  content: string;
+  updatedAt?: number;
+}
+
+function sortChaptersByOrder(a: Draft, b: Draft): number {
+  return a.order - b.order || a.updatedAt - b.updatedAt || a.id.localeCompare(b.id);
+}
+
+function reindexBookChapters(chapters: Draft[]): Draft[] {
+  return [...chapters]
+    .sort(sortChaptersByOrder)
+    .map((chapter, index) => (
+      chapter.order === index ? chapter : { ...chapter, order: index }
+    ));
+}
+
+function normalizeChapterOrders(chapters: Draft[]): Draft[] {
+  const byBook = new Map<string, Draft[]>();
+  for (const chapter of chapters) {
+    const items = byBook.get(chapter.bookId) ?? [];
+    items.push(chapter);
+    byBook.set(chapter.bookId, items);
+  }
+
+  const normalizedById = new Map<string, Draft>();
+  for (const bookChapters of byBook.values()) {
+    for (const chapter of reindexBookChapters(bookChapters)) {
+      normalizedById.set(chapter.id, chapter);
+    }
+  }
+
+  return chapters.map(chapter => normalizedById.get(chapter.id) ?? chapter);
+}
+
+function readUnloadBackup(): UnloadBackupPayload | null {
+  if (typeof window === 'undefined') return null;
+
+  const raw = window.localStorage.getItem(UNLOAD_BACKUP_STORAGE_KEY);
+  if (!raw) return null;
+
+  try {
+    const payload = JSON.parse(raw) as Partial<UnloadBackupPayload>;
+    if (!payload.draftId || typeof payload.content !== 'string') {
+      window.localStorage.removeItem(UNLOAD_BACKUP_STORAGE_KEY);
+      return null;
+    }
+    return payload as UnloadBackupPayload;
+  } catch {
+    window.localStorage.removeItem(UNLOAD_BACKUP_STORAGE_KEY);
+    return null;
+  }
+}
+
+function clearUnloadBackup() {
+  if (typeof window === 'undefined') return;
+  window.localStorage.removeItem(UNLOAD_BACKUP_STORAGE_KEY);
+}
+
+function applyUnloadBackup(chapters: Draft[], backup: UnloadBackupPayload | null) {
+  if (!backup) return { nextChapters: chapters, restoredChapter: null as Draft | null };
+
+  let restoredChapter: Draft | null = null;
+  const nextChapters = chapters.map(chapter => {
+    if (chapter.id !== backup.draftId) return chapter;
+    if (chapter.content === backup.content) {
+      restoredChapter = chapter;
+      return chapter;
+    }
+
+    restoredChapter = {
+      ...chapter,
+      content: backup.content,
+      updatedAt: Math.max(chapter.updatedAt, backup.updatedAt ?? Date.now()),
+    };
+    return restoredChapter;
+  });
+
+  return { nextChapters, restoredChapter };
+}
+
 // 防抖写入 IDB
 function useDebounceCallback(fn: (...args: unknown[]) => void, delay: number) {
   const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
@@ -96,6 +179,24 @@ export function useBooks() {
         }
 
         const normalizedChapters = allChapters.map(normalizeChapter);
+        const orderedChapters = normalizeChapterOrders(normalizedChapters);
+        const unloadBackup = readUnloadBackup();
+        const { nextChapters: hydratedChapters } = applyUnloadBackup(orderedChapters, unloadBackup);
+        const originalById = new Map(normalizedChapters.map(chapter => [chapter.id, chapter]));
+        const chaptersToPersist = hydratedChapters.filter(chapter => {
+          const original = originalById.get(chapter.id);
+          return !original || original.order !== chapter.order || original.content !== chapter.content;
+        });
+
+        if (chaptersToPersist.length > 0) {
+          Promise.all(chaptersToPersist.map(chapter => dbPut('drafts', chapter)))
+            .then(() => {
+              if (unloadBackup) clearUnloadBackup();
+            })
+            .catch(() => {});
+        } else if (unloadBackup) {
+          clearUnloadBackup();
+        }
 
         if (orderedBooks.length === 0) {
           // 全新安装，等待用户创建第一本书
@@ -104,15 +205,15 @@ export function useBooks() {
         }
 
         setBooksState(orderedBooks);
-        setChaptersState(normalizedChapters);
+        setChaptersState(hydratedChapters);
 
         const validBook = orderedBooks.find(b => b.id === activeBookId) ?? orderedBooks[0];
         setActiveBookIdState(validBook.id);
 
         // 确定激活章节
-        const bookChapters = normalizedChapters
+        const bookChapters = hydratedChapters
           .filter(c => c.bookId === validBook.id)
-          .sort((a, b) => a.order - b.order);
+          .sort(sortChaptersByOrder);
 
         if (bookChapters.length === 0) {
           // 书存在但无章节 → 创建第一章
@@ -219,7 +320,8 @@ export function useBooks() {
 
   const createChapter = useCallback(async (bookId: string) => {
     const existingInBook = chapters.filter(c => c.bookId === bookId);
-    const ch = newChapter(bookId, existingInBook.length);
+    const nextOrder = existingInBook.reduce((maxOrder, chapter) => Math.max(maxOrder, chapter.order), -1) + 1;
+    const ch = newChapter(bookId, nextOrder);
     await dbPut('drafts', ch);
     setChaptersState(prev => [...prev, ch]);
     setActiveDraftId(ch.id);
@@ -230,16 +332,30 @@ export function useBooks() {
     await dbDelete('drafts', id);
     setChaptersState(prev => {
       const ch = prev.find(c => c.id === id);
-      const next = prev.filter(c => c.id !== id);
-      if (ch) {
-        const bookChs = next
-          .filter(c => c.bookId === ch.bookId)
-          .sort((a, b) => a.order - b.order);
-        setActiveDraftId(bookChs.length > 0 ? bookChs[0].id : '');
+      if (!ch) return prev;
+
+      const others = prev.filter(c => c.bookId !== ch.bookId && c.id !== id);
+      const remainingInBook = reindexBookChapters(
+        prev.filter(c => c.bookId === ch.bookId && c.id !== id),
+      );
+      const reordered = remainingInBook.filter(chapter => {
+        const original = prev.find(prevChapter => prevChapter.id === chapter.id);
+        return original?.order !== chapter.order;
+      });
+
+      if (reordered.length > 0) {
+        Promise.all(reordered.map(chapter => dbPut('drafts', chapter))).catch(() => {});
       }
+
+      if (id === activeDraftId) {
+        const nextActive = remainingInBook[Math.min(ch.order, remainingInBook.length - 1)];
+        setActiveDraftId(nextActive?.id ?? '');
+      }
+
+      const next = [...others, ...remainingInBook];
       return next;
     });
-  }, [setActiveDraftId]);
+  }, [activeDraftId, setActiveDraftId]);
 
   const updateChapterTitle = useCallback((id: string, title: string) => {
     setChaptersState(prev => prev.map(c => {
@@ -292,7 +408,7 @@ export function useBooks() {
 
   const reorderChapters = useCallback((bookId: string, fromIndex: number, toIndex: number) => {
     setChaptersState(prev => {
-      const bookChs = prev.filter(c => c.bookId === bookId).sort((a, b) => a.order - b.order);
+      const bookChs = prev.filter(c => c.bookId === bookId).sort(sortChaptersByOrder);
       const others  = prev.filter(c => c.bookId !== bookId);
       const reordered = [...bookChs];
       const [removed] = reordered.splice(fromIndex, 1);
@@ -352,10 +468,10 @@ export function useBooks() {
   // ── 派生状态 ────────────────────────────────────────────
   const activeBook = books.find(b => b.id === activeBookId) ?? books[0];
   const activeDraft = chapters.find(c => c.id === activeDraftId) ??
-    chapters.filter(c => c.bookId === activeBookId).sort((a, b) => a.order - b.order)[0];
+    chapters.filter(c => c.bookId === activeBookId).sort(sortChaptersByOrder)[0];
 
   const bookChapters = useCallback((bookId: string) =>
-    chapters.filter(c => c.bookId === bookId).sort((a, b) => a.order - b.order),
+    chapters.filter(c => c.bookId === bookId).sort(sortChaptersByOrder),
   [chapters]);
 
   return {

@@ -5,6 +5,7 @@
 import { useState, useEffect, useCallback, useRef } from 'react';
 import type { Draft } from '../hooks/useBooks';
 import type { Theme } from '../hooks/useTheme';
+import { useNovelStore } from '../store/useNovelStore';
 
 interface ToolbarProps {
   isProcessing: boolean;
@@ -33,10 +34,15 @@ export function Toolbar({
   onOpenSettings,
   onThemeChange,
 }: ToolbarProps) {
-  const [copied, setCopied] = useState(false);
+  const leftSidebarOpen = useNovelStore((state) => state.leftSidebarOpen);
+  const rightSidebarOpen = useNovelStore((state) => state.rightSidebarOpen);
+  const toggleLeftSidebar = useNovelStore((state) => state.toggleLeftSidebar);
+  const toggleRightSidebar = useNovelStore((state) => state.toggleRightSidebar);
+  const [copyState, setCopyState] = useState<'idle' | 'success' | 'error'>('idle');
   const [exportOpen, setExportOpen] = useState(false);
   const [themeOpen, setThemeOpen] = useState(false);
 
+  const copyTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
   const exportRef = useRef<HTMLDivElement>(null);
   const themeRef  = useRef<HTMLDivElement>(null);
 
@@ -50,11 +56,29 @@ export function Toolbar({
     return () => document.removeEventListener('mousedown', handler);
   }, []);
 
+  useEffect(() => () => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+  }, []);
+
+  const setCopyFeedback = useCallback((nextState: 'success' | 'error') => {
+    if (copyTimerRef.current) clearTimeout(copyTimerRef.current);
+    setCopyState(nextState);
+    copyTimerRef.current = setTimeout(() => {
+      setCopyState('idle');
+      copyTimerRef.current = null;
+    }, 2000);
+  }, []);
+
   const handleCopy = useCallback(async () => {
-    await navigator.clipboard.writeText(content);
-    setCopied(true);
-    setTimeout(() => setCopied(false), 2000);
-  }, [content]);
+    try {
+      if (!navigator.clipboard?.writeText) throw new Error('Clipboard API unavailable');
+      await navigator.clipboard.writeText(content);
+      setCopyFeedback('success');
+    } catch (error) {
+      console.warn('[Toolbar] copy failed', error);
+      setCopyFeedback('error');
+    }
+  }, [content, setCopyFeedback]);
 
   const handleExportTxt = useCallback(() => {
     const blob = new Blob([content], { type: 'text/plain;charset=utf-8' });
@@ -112,10 +136,19 @@ export function Toolbar({
 
   return (
     <header className="toolbar">
+      {/* 左侧边栏开关 */}
+      <button
+        className="btn btn-ghost toolbar-sidebar-btn"
+        onClick={toggleLeftSidebar}
+        title={leftSidebarOpen ? '收起左侧边栏' : '展开左侧边栏'}
+      >
+        {leftSidebarOpen ? '◧' : '◨'}
+      </button>
+
       {/* 品牌 */}
       <div className="toolbar-brand">
         <span className="brand-name">AI<span> for Write</span></span>
-        <span className="brand-subtitle">v0.3 β</span>
+        <span className="brand-subtitle">v0.5 β</span>
       </div>
 
       <div className="toolbar-actions">
@@ -128,8 +161,10 @@ export function Toolbar({
           disabled={!hasContent}
           title="复制全文"
         >
-          <span>{copied ? '✓' : '⎘'}</span>
-          <span className="btn-ghost-label">{copied ? '已复制' : '复制'}</span>
+          <span>{copyState === 'success' ? '✓' : copyState === 'error' ? '!' : '⎘'}</span>
+          <span className="btn-ghost-label">
+            {copyState === 'success' ? '已复制' : copyState === 'error' ? '复制失败' : '复制'}
+          </span>
         </button>
 
         {/* 导出下拉 */}
@@ -229,6 +264,17 @@ export function Toolbar({
         >
           <span>⚙</span>
           <span className="btn-ghost-label">设置</span>
+        </button>
+
+        <div className="toolbar-divider" />
+
+        {/* 右侧边栏开关 */}
+        <button
+          className="btn btn-ghost toolbar-sidebar-btn"
+          onClick={toggleRightSidebar}
+          title={rightSidebarOpen ? '收起右侧边栏' : '展开右侧边栏'}
+        >
+          {rightSidebarOpen ? '◨' : '◧'}
         </button>
       </div>
     </header>

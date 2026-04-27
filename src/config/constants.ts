@@ -5,6 +5,9 @@
 /** 上一章末尾用于上下文参考的字符数 */
 export const PREV_CHAPTER_TAIL_CHARS = 400;
 
+/** 页面关闭时用同步 localStorage 暂存当前草稿，启动后再回灌到 IndexedDB */
+export const UNLOAD_BACKUP_STORAGE_KEY = 'novel-ai-unload-backup';
+
 /** 模块化写作：10 种块颜色（明暗主题均可辨） */
 export const BLOCK_COLORS = [
   'rgba(139,92,246,0.12)',   // purple

@@ -4,18 +4,23 @@
 
 import { useEffect, useRef, useState, useMemo } from 'react';
 import type { AiInsertRange, BLOCK_COLORS_ARRAY } from '../hooks/useEditor';
+import { useNovelGraph } from '../hooks/useNovelGraph';
+import { useTypewriterScroll } from '../hooks/useTypewriterScroll';
 import type { WritingBlock } from '../types';
 import { BLOCK_COLORS, BLOCK_BORDER_COLORS } from '../config/constants';
+import { useNovelStore } from '../store/useNovelStore';
+import { DiffPreview } from './DiffPreview';
 
 interface PendingPolish {
   text: string;
   selStart: number;
   selEnd: number;
+  mode: 'polish' | 'rewrite';
+  label: string;
 }
 
 interface EditorProps {
   content: string;
-  chapterTitle?: string;
   isStreaming: boolean;
   isPolishing: boolean;
   aiInsertRange: AiInsertRange | null;
@@ -26,6 +31,7 @@ interface EditorProps {
   fontSize?: number;
   editorFont?: string;
   writingBlocks?: WritingBlock[];
+  bookId?: string | null;
   onChange: (value: string) => void;
   onContinue: () => void;
   onAcceptContinuation: () => void;
@@ -83,9 +89,43 @@ function renderBlockLayer(content: string, blocks: WritingBlock[]): React.ReactN
 // suppress unused import warning
 void (null as unknown as typeof BLOCK_COLORS_ARRAY);
 
+function getSelectionMenuPoint(el: HTMLTextAreaElement, position: number): { x: number; y: number } {
+  const hostRect = el.getBoundingClientRect();
+  const style = window.getComputedStyle(el);
+  const mirror = document.createElement('div');
+  const marker = document.createElement('span');
+
+  mirror.style.position = 'fixed';
+  mirror.style.left = `${hostRect.left}px`;
+  mirror.style.top = `${hostRect.top}px`;
+  mirror.style.width = `${el.clientWidth}px`;
+  mirror.style.visibility = 'hidden';
+  mirror.style.pointerEvents = 'none';
+  mirror.style.whiteSpace = 'pre-wrap';
+  mirror.style.wordBreak = style.wordBreak;
+  mirror.style.overflowWrap = style.overflowWrap;
+  mirror.style.boxSizing = style.boxSizing;
+  mirror.style.font = style.font;
+  mirror.style.lineHeight = style.lineHeight;
+  mirror.style.letterSpacing = style.letterSpacing;
+  mirror.style.padding = style.padding;
+  mirror.style.border = style.border;
+
+  mirror.textContent = el.value.slice(0, position);
+  marker.textContent = '\u200b';
+  mirror.appendChild(marker);
+  document.body.appendChild(mirror);
+
+  const markerRect = marker.getBoundingClientRect();
+  document.body.removeChild(mirror);
+
+  const x = Math.min(Math.max(markerRect.left - el.scrollLeft, hostRect.left + 24), hostRect.right - 24);
+  const y = Math.min(Math.max(markerRect.top - el.scrollTop, hostRect.top + 12), hostRect.bottom - 12);
+  return { x, y };
+}
+
 export function Editor({
   content,
-  chapterTitle: _chapterTitle,
   isStreaming,
   isPolishing,
   aiInsertRange,
@@ -96,6 +136,7 @@ export function Editor({
   fontSize,
   editorFont,
   writingBlocks = [],
+  bookId = null,
   onChange,
   onContinue,
   onAcceptContinuation,
@@ -107,11 +148,37 @@ export function Editor({
   const textareaRef = useRef<HTMLTextAreaElement>(null);
   const ghostOverlayRef = useRef<HTMLDivElement>(null);
   const gutterRef = useRef<HTMLDivElement>(null);
+  const entityDetectTimerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const entityNamesRef = useRef<string[]>([]);
   const isProcessing = isStreaming || isPolishing;
   const hasPending = hasPendingContinuation || pendingPolish !== null;
+  const focusMode = useNovelStore((state) => state.focusMode);
+  const { graph } = useNovelGraph(bookId);
 
   // 当前光标所在行（高亮用）
   const [activeLine, setActiveLine] = useState(0);
+
+  const entityNames = useMemo(
+    () => (graph?.entities ?? [])
+      .map(entity => entity.name.trim())
+      .filter(name => name.length > 0)
+      .sort((a, b) => b.length - a.length),
+    [graph],
+  );
+
+  useTypewriterScroll(textareaRef, focusMode);
+
+  useEffect(() => {
+    entityNamesRef.current = entityNames;
+  }, [entityNames]);
+
+  useEffect(() => {
+    useNovelStore.getState().setHighlightedEntity(null);
+  }, [bookId]);
+
+  useEffect(() => () => {
+    if (entityDetectTimerRef.current) clearTimeout(entityDetectTimerRef.current);
+  }, []);
 
   // useMemo：仅 content 或 writingBlocks 变化时重新计算块颜色层
   const blockLayerNode = useMemo(
@@ -181,6 +248,13 @@ export function Editor({
     if (!el) return;
     const { selectionStart: s, selectionEnd: e } = el;
     onSelectionChange(s !== e ? { start: s, end: e } : null);
+    const selectedText = s !== e ? el.value.slice(s, e).trim() : '';
+    if (selectedText && !isProcessing && !hasPending) {
+      const point = getSelectionMenuPoint(el, s);
+      useNovelStore.getState().showInlineMenu(point.x, point.y - 8, selectedText);
+    } else {
+      useNovelStore.getState().hideInlineMenu();
+    }
     // 计算光标所在行
     const lineIndex = el.value.slice(0, s).split('\n').length - 1;
     setActiveLine(lineIndex);
@@ -193,7 +267,37 @@ export function Editor({
     }
   };
 
+  const scheduleEntityDetection = (textBeforeCursor: string) => {
+    if (entityDetectTimerRef.current) clearTimeout(entityDetectTimerRef.current);
+    entityDetectTimerRef.current = setTimeout(() => {
+      const names = entityNamesRef.current;
+      if (!names.length) {
+        useNovelStore.getState().setHighlightedEntity(null);
+        return;
+      }
+
+      const text = textBeforeCursor.trimEnd();
+      const match = text.match(/[\u4e00-\u9fa5a-zA-Z0-9_]+$/);
+      const lastWord = match?.[0] ?? '';
+      const lowerText = text.toLocaleLowerCase();
+      const lowerLastWord = lastWord.toLocaleLowerCase();
+      const found = names.find(name => {
+        const lowerName = name.toLocaleLowerCase();
+        return lowerLastWord === lowerName || lowerText.endsWith(lowerName);
+      }) ?? null;
+
+      useNovelStore.getState().setHighlightedEntity(found);
+    }, 500);
+  };
+
   // AI 新内容接受后高亮覆盖层
+  const handleChange = (value: string) => {
+    useNovelStore.getState().hideInlineMenu();
+    const cursor = textareaRef.current?.selectionStart ?? value.length;
+    scheduleEntityDetection(value.slice(0, cursor));
+    onChange(value);
+  };
+
   const renderHighlight = () => {
     if (!aiInsertRange) return null;
     const before = content.slice(0, aiInsertRange.start);
@@ -246,11 +350,17 @@ export function Editor({
     const originalCount = originalText.replace(/\s/g, '').length;
     const polishedCount = text.replace(/\s/g, '').length;
     const delta = polishedCount - originalCount;
+    const isRewrite = pendingPolish.mode === 'rewrite';
+    const panelIcon = isRewrite ? '✍️' : '💎';
+    const panelTitle = isRewrite
+      ? `${pendingPolish.label}改写`
+      : (isPartial ? '润色选中内容' : '润色全文');
+    const revisedLabel = isRewrite ? '改写后' : '润色后';
     return (
       <div className="polish-panel">
         <div className="polish-panel-header">
           <span className="audit-label">
-            💎 {isPartial ? `润色选中内容` : '润色全文'}
+            {panelIcon} {panelTitle}
             <span className="polish-delta">
               {originalCount} 字 → {polishedCount} 字
               {delta !== 0 && (
@@ -260,7 +370,7 @@ export function Editor({
               )}
             </span>
           </span>
-          <div className="audit-actions">
+          <div className="audit-actions polish-header-actions">
             <button className="audit-btn audit-accept" onClick={onAcceptPolish}>
               ✅ 接受 <kbd>Tab</kbd>
             </button>
@@ -270,13 +380,19 @@ export function Editor({
           </div>
         </div>
         <div className="polish-panel-body">
+          <DiffPreview
+            original={originalText}
+            revised={text}
+            onAccept={onAcceptPolish}
+            onReject={onRejectPolish}
+          />
           <div className="polish-col">
             <div className="polish-col-label">原文</div>
             <div className="polish-panel-content polish-original">{originalText}</div>
           </div>
           <div className="polish-divider" />
           <div className="polish-col">
-            <div className="polish-col-label">润色后</div>
+            <div className="polish-col-label">{revisedLabel}</div>
             <div className="polish-panel-content">{text}</div>
           </div>
         </div>
@@ -336,8 +452,9 @@ export function Editor({
           ref={textareaRef}
           className={`editor-textarea ${isStreaming ? 'streaming' : ''}`}
           value={content}
-          onChange={e => onChange(e.target.value)}
+          onChange={e => handleChange(e.target.value)}
           onKeyDown={handleKeyDown}
+          onKeyUp={handleSelectionChange}
           onSelect={handleSelectionChange}
           onMouseUp={handleSelectionChange}
           placeholder="在这里开始你的故事..."

@@ -25,6 +25,10 @@ export function FindReplace({ content, mode: initialMode, onClose, onChange, onM
     findInputRef.current?.select();
   }, []);
 
+  useEffect(() => {
+    setMode(initialMode);
+  }, [initialMode]);
+
   // 所有匹配位置（useMemo 避免重复计算）
   const allMatches = useMemo((): number[] => {
     if (!findText) return [];
@@ -41,10 +45,13 @@ export function FindReplace({ content, mode: initialMode, onClose, onChange, onM
 
   const matchCount = allMatches.length;
 
-  // findText/caseSensitive 变化时自动跳到第一个匹配
   useEffect(() => {
-    setCurrentIndex(matchCount > 0 ? 0 : -1);
-  }, [findText, caseSensitive, matchCount]);
+    setCurrentIndex(prev => {
+      if (!findText || matchCount === 0) return -1;
+      if (prev < 0) return 0;
+      return Math.min(prev, matchCount - 1);
+    });
+  }, [findText, matchCount]);
 
   // currentIndex 变化时通知 Editor 定位光标
   useEffect(() => {
@@ -62,6 +69,16 @@ export function FindReplace({ content, mode: initialMode, onClose, onChange, onM
     if (matchCount === 0) return;
     setCurrentIndex(prev => (prev - 1 + matchCount) % matchCount);
   }, [matchCount]);
+
+  const handleFindTextChange = useCallback((value: string) => {
+    setFindText(value);
+    setCurrentIndex(value ? 0 : -1);
+  }, []);
+
+  const handleToggleCaseSensitive = useCallback(() => {
+    setCaseSensitive(prev => !prev);
+    setCurrentIndex(findText ? 0 : -1);
+  }, [findText]);
 
   // 替换当前（index=-1 时自动用 index 0）
   const replaceCurrent = useCallback(() => {
@@ -126,7 +143,7 @@ export function FindReplace({ content, mode: initialMode, onClose, onChange, onM
             className="find-input"
             placeholder="查找…"
             value={findText}
-            onChange={e => setFindText(e.target.value)}
+            onChange={e => handleFindTextChange(e.target.value)}
             spellCheck={false}
           />
           <span className={`find-count ${findText && matchCount === 0 ? 'find-count-empty' : ''}`}>
@@ -146,7 +163,7 @@ export function FindReplace({ content, mode: initialMode, onClose, onChange, onM
           >↓</button>
           <button
             className={`find-case-btn ${caseSensitive ? 'find-case-active' : ''}`}
-            onClick={() => setCaseSensitive(v => !v)}
+            onClick={handleToggleCaseSensitive}
             title="区分大小写"
           >Aa</button>
         </div>

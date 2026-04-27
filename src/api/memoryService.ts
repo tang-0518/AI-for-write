@@ -143,6 +143,7 @@ interface KGEntity {
   attributes:   Record<string, string>;
   observations: string[];
   tags:         string[];
+  updatedAt:    number;
 }
 
 const MAX_CONTENT_CHARS = 280;
@@ -160,6 +161,25 @@ function kgEntityToEntry(entity: KGEntity): ContextEntry {
     name:       entity.name,
     summary,
     source:     'kg',
+    tokenCount: estimateTokens(line),
+  };
+}
+
+function kgCharacterDynamicToEntry(entity: KGEntity): ContextEntry | null {
+  const recentObservations = entity.observations
+    .map(observation => observation.trim())
+    .filter(Boolean)
+    .slice(-3);
+
+  if (recentObservations.length === 0) return null;
+
+  const summary = recentObservations.join('；').slice(0, MAX_CONTENT_CHARS);
+  const line = `${entity.name}：${summary}`;
+  return {
+    id: `${entity.id}::dynamic`,
+    name: entity.name,
+    summary,
+    source: 'kg',
     tokenCount: estimateTokens(line),
   };
 }
@@ -204,6 +224,24 @@ async function fetchKGGraph(bookId: string): Promise<KGGraph | null> {
   }
 }
 
+function sortKGEntitiesByQueryOrRecency(
+  entries: KGEntity[],
+  query: string,
+): KGEntity[] {
+  return query.trim()
+    ? entries.slice().sort((a, b) => scoreRelevance(b.name, kgEntityToEntry(b).summary, query) - scoreRelevance(a.name, kgEntityToEntry(a).summary, query))
+    : entries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
+function sortMemoryEntriesByQueryOrRecency(
+  entries: MemoryEntry[],
+  query: string,
+): MemoryEntry[] {
+  return query.trim()
+    ? entries.slice().sort((a, b) => scoreRelevance(b.name, b.content, query) - scoreRelevance(a.name, a.content, query))
+    : entries.slice().sort((a, b) => b.updatedAt - a.updatedAt);
+}
+
 // ─────────────────────────────────────────────────────────────
 // 主函数：装配 ContextBundle
 // ─────────────────────────────────────────────────────────────
@@ -228,14 +266,10 @@ export async function buildContextBundle(
   // ── 2a. KG 角色（或 fallback：IndexedDB character）─────────
   const charBudget = Math.min(BUDGETS.character, totalBudget - totalTokens);
   if (kgAvailable && charBudget > 0) {
-    const kgChars = kg!.entities
-      .filter(e => e.type === 'character' || e.type === 'faction')
-      .map(kgEntityToEntry);
-
-    // 若有查询词，按相关性排序
-    const ranked = query.trim()
-      ? kgChars.slice().sort((a, b) => scoreRelevance(b.name, b.summary, query) - scoreRelevance(a.name, a.summary, query))
-      : kgChars;
+    const ranked = sortKGEntitiesByQueryOrRecency(
+      kg!.entities.filter(e => e.type === 'character' || e.type === 'faction'),
+      query,
+    ).map(kgEntityToEntry);
 
     const sec = buildSection(ranked, 'character', '角色', '👤', '#f87171', 'kg', charBudget);
     sections.push(sec);
@@ -245,12 +279,10 @@ export async function buildContextBundle(
     totalTokens += sec.tokenCount;
   } else if (!kgAvailable) {
     // Fallback：IndexedDB character
-    const localChars = localEntries
-      .filter(e => e.type === 'character')
-      .map(memoryEntryToContextEntry);
-    const ranked = query.trim()
-      ? localChars.slice().sort((a, b) => scoreRelevance(b.name, b.summary, query) - scoreRelevance(a.name, a.summary, query))
-      : localChars;
+    const ranked = sortMemoryEntriesByQueryOrRecency(
+      localEntries.filter(e => e.type === 'character'),
+      query,
+    ).map(memoryEntryToContextEntry);
     const sec = buildSection(ranked, 'character', '角色', '👤', '#f87171', 'local', charBudget);
     sections.push(sec);
     if (sec.included.length > 0) {
@@ -263,20 +295,22 @@ export async function buildContextBundle(
   const worldBudget = Math.min(BUDGETS.world_rule, totalBudget - totalTokens);
   if (worldBudget > 0) {
     if (kgAvailable) {
-      const kgWorld = kg!.entities
-        .filter(e => ['world_rule', 'location', 'item'].includes(e.type))
-        .map(kgEntityToEntry);
-      const sec = buildSection(kgWorld, 'world_rule', '世界设定', '🌍', '#60a5fa', 'kg', worldBudget);
+      const ranked = sortKGEntitiesByQueryOrRecency(
+        kg!.entities.filter(e => ['world_rule', 'location', 'item'].includes(e.type)),
+        query,
+      ).map(kgEntityToEntry);
+      const sec = buildSection(ranked, 'world_rule', '世界设定', '🌍', '#60a5fa', 'kg', worldBudget);
       sections.push(sec);
       if (sec.included.length > 0) {
         promptParts.push('【世界设定（知识图谱）】\n' + sec.included.map(e => `${e.name}：${e.summary}`).join('\n'));
       }
       totalTokens += sec.tokenCount;
     } else {
-      const localWorld = localEntries
-        .filter(e => e.type === 'world_rule')
-        .map(memoryEntryToContextEntry);
-      const sec = buildSection(localWorld, 'world_rule', '世界设定', '🌍', '#60a5fa', 'local', worldBudget);
+      const ranked = sortMemoryEntriesByQueryOrRecency(
+        localEntries.filter(e => e.type === 'world_rule'),
+        query,
+      ).map(memoryEntryToContextEntry);
+      const sec = buildSection(ranked, 'world_rule', '世界设定', '🌍', '#60a5fa', 'local', worldBudget);
       sections.push(sec);
       if (sec.included.length > 0) {
         promptParts.push('【世界设定】\n' + sec.included.map(e => `${e.name}：${e.summary}`).join('\n'));
@@ -291,7 +325,6 @@ export async function buildContextBundle(
     const summaries = localEntries
       .filter(e => e.type === 'chapter_summary')
       .sort((a, b) => (b.chapterOrder ?? b.updatedAt) - (a.chapterOrder ?? a.updatedAt))
-      .slice(0, 3)
       .map(memoryEntryToContextEntry);
     const sec = buildSection(summaries, 'chapter_summary', '近章摘要', '📖', '#34d399', 'local', sumBudget);
     sections.push(sec);
@@ -304,15 +337,63 @@ export async function buildContextBundle(
   // ── 2d. 笔记（剩余预算兜底）────────────────────────────────
   const noteBudget = Math.min(BUDGETS.note, totalBudget - totalTokens);
   if (noteBudget > 0) {
-    const notes = localEntries
-      .filter(e => e.type === 'note')
-      .map(memoryEntryToContextEntry);
+    const notes = sortMemoryEntriesByQueryOrRecency(
+      localEntries.filter(e => e.type === 'note'),
+      query,
+    ).map(memoryEntryToContextEntry);
     const sec = buildSection(notes, 'note', '笔记', '📝', '#fbbf24', 'local', noteBudget);
     sections.push(sec);
     if (sec.included.length > 0) {
       promptParts.push(sec.included.map(e => `${e.name}：${e.summary}`).join('\n'));
     }
     totalTokens += sec.tokenCount;
+  }
+
+  // ── 2e. 图谱角色动态（从剩余预算中分配，避免挤占主档案）───────
+  if (kgAvailable) {
+    const dynamicBudget = Math.min(200, Math.max(0, totalBudget - totalTokens - 50));
+    if (dynamicBudget > 0) {
+      const dynamics = kg!.entities
+        .filter(entity => entity.type === 'character')
+        .slice()
+        .sort((a, b) => b.updatedAt - a.updatedAt)
+        .map(kgCharacterDynamicToEntry)
+        .filter((entry): entry is ContextEntry => entry !== null);
+
+      const sec = buildSection(dynamics, 'character_dynamic', '角色动态', '✨', '#fb7185', 'kg', dynamicBudget);
+      sections.push(sec);
+      if (sec.included.length > 0) {
+        promptParts.push('【角色动态】\n' + sec.included.map(e => `${e.name}：${e.summary}`).join('\n'));
+      }
+      totalTokens += sec.tokenCount;
+    }
+  }
+
+  // ── 2f. 图谱关系注入（Section 6，来自 graph_relations）────────
+  if (kgAvailable && kg!.relations.length > 0) {
+    const relBudget = Math.min(120, Math.max(0, totalBudget - totalTokens - 30));
+    if (relBudget > 0) {
+      const topRels = kg!.relations
+        .slice()
+        .sort((a, b) => (b.weight ?? 0) - (a.weight ?? 0))
+        .slice(0, 12);
+
+      const relLines: string[] = [];
+      let relTokens = 0;
+
+      for (const r of topRels) {
+        const line = `${r.from} → ${r.relationType} → ${r.to}`;
+        const cost = Math.ceil(line.length / 1.5);
+        if (relTokens + cost > relBudget) break;
+        relLines.push(line);
+        relTokens += cost;
+      }
+
+      if (relLines.length > 0) {
+        promptParts.push('【角色关系】\n' + relLines.join('\n'));
+        totalTokens += relTokens;
+      }
+    }
   }
 
   // ── 3. 拼接 promptText ────────────────────────────────────
@@ -348,17 +429,14 @@ export function buildContextBundleLocal(
     type: 'character' | 'world_rule' | 'chapter_summary' | 'note',
     label: string, emoji: string, color: string,
     budgetKey: keyof typeof BUDGETS,
-    maxEntries = 999,
   ) => {
     const budget = Math.min(BUDGETS[budgetKey], totalBudget - totalTokens);
     if (budget <= 0) return;
-    const entries = localEntries
-      .filter(e => e.type === type)
-      .slice(0, maxEntries)
-      .map(memoryEntryToContextEntry);
-    const ranked = (query.trim() && type !== 'chapter_summary')
-      ? entries.slice().sort((a, b) => scoreRelevance(b.name, b.summary, query) - scoreRelevance(a.name, a.summary, query))
-      : entries;
+    const filtered = localEntries.filter(e => e.type === type);
+    const ordered = type === 'chapter_summary'
+      ? filtered.slice().sort((a, b) => (b.chapterOrder ?? b.updatedAt) - (a.chapterOrder ?? a.updatedAt))
+      : sortMemoryEntriesByQueryOrRecency(filtered, query);
+    const ranked = ordered.map(memoryEntryToContextEntry);
     const sec = buildSection(ranked, type, label, emoji, color, 'local', budget);
     sections.push(sec);
     if (sec.included.length > 0) {
@@ -369,7 +447,7 @@ export function buildContextBundleLocal(
 
   addSection('character',       '角色档案', '👤', '#f87171', 'character');
   addSection('world_rule',      '世界设定', '🌍', '#60a5fa', 'world_rule');
-  addSection('chapter_summary', '近章摘要', '📖', '#34d399', 'chapter_summary', 3);
+  addSection('chapter_summary', '近章摘要', '📖', '#34d399', 'chapter_summary');
   addSection('note',            '笔记',     '📝', '#fbbf24', 'note');
 
   const promptText = promptParts.length > 0

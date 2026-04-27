@@ -2,7 +2,7 @@
 // components/SettingsModal.tsx — IDE 风格设置面板
 // =============================================================
 
-import { useState, useCallback } from 'react';
+import { useState, useEffect, useCallback } from 'react';
 import type { AppSettings, WritingStyle, WriteLength, CreativityLevel } from '../types';
 import { STYLE_CONFIGS, LENGTH_CONFIGS, EDITOR_FONT_OPTIONS, CREATIVITY_CONFIGS } from '../types';
 import { callGemini } from '../api/gemini';
@@ -30,6 +30,15 @@ export function SettingsModal({ settings, onSave, onClose }: Props) {
   const [showKey, setShowKey] = useState(false);
   const [testStatus, setTestStatus] = useState<'idle' | 'testing' | 'ok' | 'fail'>('idle');
   const [testError, setTestError] = useState('');
+
+  useEffect(() => {
+    const handler = (event: KeyboardEvent) => {
+      if (event.key === 'Escape') onClose();
+    };
+
+    window.addEventListener('keydown', handler);
+    return () => window.removeEventListener('keydown', handler);
+  }, [onClose]);
 
   const handleTestConnection = useCallback(async () => {
     if (!draft.apiKey) {

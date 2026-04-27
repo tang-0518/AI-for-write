@@ -24,15 +24,13 @@ test('@smoke 品牌名称可见', async ({ page }) => {
 });
 
 test('@smoke 工具栏所有核心按钮存在', async ({ page }) => {
-  // 记忆库
-  await expect(page.locator('button', { hasText: '记忆' })).toBeVisible();
-  // 指令
+  await expect(page.getByRole('tab', { name: 'AI' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Memory' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Graph' })).toBeVisible();
+  await expect(page.getByRole('tab', { name: 'Plot' })).toBeVisible();
   await expect(page.locator('button', { hasText: '指令' })).toBeVisible();
-  // 复制
   await expect(page.locator('button', { hasText: '复制' })).toBeVisible();
-  // 导出
   await expect(page.locator('button', { hasText: '导出' })).toBeVisible();
-  // 设置
   await expect(page.locator('button[title="设置"]')).toBeVisible();
 });
 

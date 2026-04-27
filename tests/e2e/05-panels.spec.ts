@@ -19,22 +19,19 @@ test.beforeEach(async ({ page }) => {
 });
 
 test('@smoke 记忆库面板可打开', async ({ page }) => {
-  const memBtn = page.locator('button', { hasText: /记忆/ });
-  await memBtn.click();
-  // 记忆面板或 modal 出现
-  const panel = page.locator('.memory-panel, [class*="memory"], .modal-panel').first();
+  await page.getByRole('tab', { name: 'Memory' }).click();
+  const panel = page.locator('.msb-root').first();
   await expect(panel).toBeVisible({ timeout: 5_000 });
+  await expect(page.locator('.msb-title', { hasText: '记忆' })).toBeVisible();
 });
 
-test('@smoke 记忆库面板可关闭', async ({ page }) => {
-  const memBtn = page.locator('button', { hasText: /记忆/ });
-  await memBtn.click();
-  const panel = page.locator('.memory-panel, [class*="memory"], .modal-panel').first();
+test('@smoke 记忆库面板可切回 AI', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Memory' }).click();
+  const panel = page.locator('.msb-root').first();
   await expect(panel).toBeVisible({ timeout: 5_000 });
 
-  // 点背景遮罩关闭（MemoryPanel 使用 memory-backdrop 而非 modal-backdrop）
-  await page.locator('.memory-backdrop').first().click({ position: { x: 10, y: 10 } });
-  await expect(panel).not.toBeVisible({ timeout: 3_000 });
+  await page.getByRole('tab', { name: 'AI' }).click();
+  await expect(page.locator('.rs-ai-tab')).toBeVisible();
 });
 
 test('@smoke 工具栏指令开关按钮', async ({ page }) => {
@@ -48,34 +45,20 @@ test('@smoke 工具栏指令开关按钮', async ({ page }) => {
 });
 
 test('@smoke 知识图谱面板可打开', async ({ page }) => {
-  const graphBtn = page.locator('button[title*="图谱"], button', { hasText: '图谱' });
-  await graphBtn.click();
-
-  // 图谱面板出现（MCP 在线显示 canvas，离线显示 offline 提示）
-  const graphPanel = page.locator('.gp-float').first();
-  await expect(graphPanel).toBeVisible({ timeout: 5_000 });
+  await page.getByRole('tab', { name: 'Graph' }).click();
+  await expect(page.locator('.mg-root')).toBeVisible({ timeout: 5_000 });
 });
 
-test('@smoke MCP 离线时图谱显示重连提示', async ({ page }) => {
-  const graphBtn = page.locator('button[title*="图谱"], button', { hasText: '图谱' });
-  await graphBtn.click();
-
+test('@smoke 3D 图谱浮层可打开', async ({ page }) => {
+  await page.getByRole('tab', { name: 'Graph' }).click();
+  await page.locator('button', { hasText: '3D' }).click();
   const graphPanel = page.locator('.gp-float').first();
   await expect(graphPanel).toBeVisible({ timeout: 5_000 });
-
-  // 如果 MCP 未运行，应显示离线或重连按钮（不崩溃）
-  const hasOffline = await page.locator('.gp-offline, text=/MCP|重新连接/').isVisible({ timeout: 3_000 })
-    .catch(() => false);
-  const hasCanvas = await page.locator('canvas').isVisible({ timeout: 1_000 })
-    .catch(() => false);
-
-  // 至少有一种状态（离线提示 OR canvas 图谱）
-  expect(hasOffline || hasCanvas).toBe(true);
 });
 
 test('@smoke 图谱面板可关闭', async ({ page }) => {
-  const graphBtn = page.locator('button', { hasText: '图谱' });
-  await graphBtn.click();
+  await page.getByRole('tab', { name: 'Graph' }).click();
+  await page.locator('button', { hasText: '3D' }).click();
   const graphPanel = page.locator('.gp-float').first();
   await expect(graphPanel).toBeVisible({ timeout: 5_000 });
 
