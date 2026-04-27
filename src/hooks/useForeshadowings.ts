@@ -5,6 +5,8 @@
 import { useState, useEffect, useCallback } from 'react';
 import { dbGetAll, dbPut } from '../db/index';
 import type { MemoryEntry, PlotHook } from '../memory/types';
+import { upsertForeshadowItem, consumeForeshadowItem, getChapterForeshadowSuggestions } from '../api/foreshadow';
+import type { ChapterSuggestionsResponse } from '../api/foreshadow';
 
 export interface ForeshadowRecord {
   id: string;
@@ -57,6 +59,7 @@ function toManualRecord(hook: PlotHook): ForeshadowRecord {
 
 export function useForeshadowings(bookId: string | undefined) {
   const [items, setItems] = useState<ForeshadowRecord[]>([]);
+  const novelId = bookId ?? '';
 
   const load = useCallback(async () => {
     if (!bookId) {
@@ -134,6 +137,9 @@ export function useForeshadowings(bookId: string | undefined) {
     const [source, rawId] = id.split(':', 2);
     if (!source || !rawId) return;
 
+    let description = '';
+    let plantedChapter = 1;
+
     if (source === 'auto') {
       const all = await dbGetAll<MemoryEntry>('memories');
       const entry = all.find(memory => memory.id === rawId);
@@ -149,6 +155,9 @@ export function useForeshadowings(bookId: string | undefined) {
         content: nextContent,
         updatedAt: Date.now(),
       });
+
+      description = entry.content.replace(/\n?\[已回收于第\d+章\]/g, '').trim();
+      plantedChapter = typeof entry.chapterOrder === 'number' ? entry.chapterOrder + 1 : 1;
     }
 
     if (source === 'manual') {
@@ -162,13 +171,36 @@ export function useForeshadowings(bookId: string | undefined) {
         chapterResolved: `第${chapterNumber}章`,
         updatedAt: Date.now(),
       });
+
+      description = hook.description.trim() || hook.title.trim();
+      const m = hook.chapterCreated?.match(/\d+/);
+      plantedChapter = m ? Number(m[0]) : 1;
+    }
+
+    // Fire-and-forget: 同步至后端台账
+    if (novelId && description) {
+      upsertForeshadowItem(novelId, {
+        entry_id: rawId,
+        chapter: plantedChapter,
+        hidden_clue: description,
+      }).then(() => {
+        consumeForeshadowItem(novelId, rawId, chapterNumber).catch(() => {});
+      }).catch(() => {});
     }
 
     await load();
-  }, [load]);
+  }, [load, novelId]);
+
+  const getChapterSuggestions = useCallback(
+    (chapterNumber: number, outline?: string): Promise<ChapterSuggestionsResponse | null> => {
+      if (!novelId) return Promise.resolve(null);
+      return getChapterForeshadowSuggestions(novelId, chapterNumber, outline);
+    },
+    [novelId],
+  );
 
   const pending = items.filter(item => item.status === 'planted');
   const resolved = items.filter(item => item.status === 'resolved');
 
-  return { items, pending, resolved, resolve, reload: load };
+  return { items, pending, resolved, resolve, reload: load, getChapterSuggestions };
 }
