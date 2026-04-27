@@ -7,6 +7,8 @@ import { dbGetAll, dbPut, dbDelete } from '../db/index';
 import type { StyleProfile } from '../types/styleProfile';
 import type { AppSettings } from '../types';
 import { analyzeWritingStyle } from '../api/styleAnalysis';
+import { submitVoiceSample, getVoiceFingerprint, getDriftReport } from '../api/voice';
+import type { VoiceFingerprint, DriftReport } from '../api/voice';
 
 export type AnalysisStatus = 'idle' | 'analyzing' | 'done' | 'error';
 
@@ -14,6 +16,8 @@ export function useStyleLearning(settings: AppSettings) {
   const [profiles, setProfiles] = useState<StyleProfile[]>([]);
   const [status, setStatus] = useState<AnalysisStatus>('idle');
   const [errorMsg, setErrorMsg] = useState('');
+  const [fingerprint, setFingerprint] = useState<VoiceFingerprint | null>(null);
+  const [driftReport, setDriftReport] = useState<DriftReport | null>(null);
 
   // ── 加载全部档案 ─────────────────────────────────────────
   const reload = useCallback(async () => {
@@ -75,6 +79,19 @@ export function useStyleLearning(settings: AppSettings) {
       await dbPut('style_profiles', profile);
       await reload();
       setStatus('done');
+
+      // Fire-and-forget: 将章节内容作为基准样本同步到后端
+      // 以章节内容同时作为 ai_original 和 author_refined 建立初始指纹
+      params.chapters.forEach((ch, i) => {
+        if (ch.content.trim().length > 50) {
+          submitVoiceSample(params.sourceBookId, {
+            ai_original: ch.content,
+            author_refined: ch.content,
+            chapter_number: i + 1,
+          }).catch(() => {});
+        }
+      });
+
       return profile;
     } catch (err) {
       setErrorMsg(err instanceof Error ? err.message : '分析失败，请重试');
@@ -103,14 +120,30 @@ export function useStyleLearning(settings: AppSettings) {
     setErrorMsg('');
   }, []);
 
+  const fetchFingerprint = useCallback(async (novelId: string) => {
+    const fp = await getVoiceFingerprint(novelId);
+    setFingerprint(fp);
+    return fp;
+  }, []);
+
+  const fetchDriftReport = useCallback(async (novelId: string) => {
+    const report = await getDriftReport(novelId);
+    setDriftReport(report);
+    return report;
+  }, []);
+
   return {
     profiles,
     status,
     errorMsg,
+    fingerprint,
+    driftReport,
     createProfile,
     deleteProfile,
     renameProfile,
     resetStatus,
     reload,
+    fetchFingerprint,
+    fetchDriftReport,
   };
 }

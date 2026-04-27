@@ -13,8 +13,8 @@
 | Step 1 | 后端目录差异审计 → 零缺失，后端 100% 已实现 | ✅ 已完成 2026-04-27 |
 | Step 2 | 验证后端启动：.env 创建、DB 初始化、Gemini 激活、/health 200 OK | ✅ 已完成 2026-04-27 |
 | Step 3 | 前端小说/章节 CRUD 双写后端：`src/api/novels.ts` + `useBooks.ts` 注入 | ✅ 已完成 2026-04-27 |
-| Step 4 | 自动驾驶面板：`src/api/autopilot.ts` + `AutopilotPanel.tsx` | ⬜ 待做 |
-| Step 5 | 文风分析接入后端 `/api/v1/novels/{id}/voice/` | ⬜ 待做 |
+| Step 4 | 自动驾驶面板：`src/api/autopilot.ts` + `AutopilotPanel.tsx` | ✅ 已完成 2026-04-27 |
+| Step 5 | 文风分析接入后端 `/api/v1/novels/{id}/voice/`：`src/api/voice.ts` + useStyleLearning 同步 | ✅ 已完成 2026-04-27 |
 | Step 6 | 伏笔台账接入后端 `/api/v1/novels/{id}/foreshadow-ledger/` | ⬜ 待做 |
 | Step 7 | 节拍表接入后端 `/api/v1/beat-sheets/` | ⬜ 待做 |
 | Step 8 | 章节审查面板 `AuditPanel.tsx` + `/api/v1/chapter-reviews/` | ⬜ 待做 |
